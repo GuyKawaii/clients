@@ -1,6 +1,6 @@
 import { ChangeDetectorRef } from "@angular/core";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { ReactiveFormsModule } from "@angular/forms";
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from "@angular/forms";
 import { mock } from "jest-mock-extended";
 import { Observable, of } from "rxjs";
 
@@ -9,10 +9,12 @@ import { Account, AccountService } from "@bitwarden/common/auth/abstractions/acc
 import { ConfigService } from "@bitwarden/common/platform/abstractions/config/config.service";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
 import { CipherArchiveService } from "@bitwarden/common/vault/abstractions/cipher-archive.service";
+import { CipherType } from "@bitwarden/common/vault/enums";
 import { Cipher } from "@bitwarden/common/vault/models/domain/cipher";
 import { AttachmentView } from "@bitwarden/common/vault/models/view/attachment.view";
 import { CipherView } from "@bitwarden/common/vault/models/view/cipher.view";
 import { Fido2CredentialView } from "@bitwarden/common/vault/models/view/fido2-credential.view";
+import { LoginUriView } from "@bitwarden/common/vault/models/view/login-uri.view";
 import { ToastService } from "@bitwarden/components";
 
 import { CipherFormConfig } from "../abstractions/cipher-form-config.service";
@@ -71,6 +73,185 @@ describe("CipherFormComponent", () => {
   it("should create the component", () => {
     expect(component).toBeTruthy();
   });
+
+  describe("cached draft capture choice", () => {
+    let cacheService: CipherFormCacheService;
+
+    beforeEach(() => {
+      cacheService = fixture.debugElement.injector.get(CipherFormCacheService);
+      component.config = {
+        mode: "add",
+        cipherType: CipherType.Login,
+        saveBaseUrlOnly: { enabled: true },
+      } as CipherFormConfig;
+      component["updatedCipherView"] = new CipherView();
+      component["updatedCipherView"].type = CipherType.Login;
+    });
+
+    function cacheDraft(type = CipherType.Login, enabled: boolean | null = false) {
+      const draft = new CipherView();
+      draft.type = type;
+      jest.spyOn(cacheService, "getCachedCipherView").mockReturnValue(draft);
+      jest.spyOn(cacheService, "getCachedSaveBaseUrlOnly").mockReturnValue(enabled);
+      return draft;
+    }
+
+    it("restores a notification's false choice and preserves its full URL through submission", async () => {
+      const draft = cacheDraft();
+      const uri = "https://example.com/login?token=secret#session";
+      draft.login.uris = [Object.assign(new LoginUriView(), { uri })];
+      component.config.organizationDataOwnershipDisabled = true;
+
+      component.setInitialCipherFromCache();
+      const website = new FormControl({ uri, matchDetection: null });
+      component.registerChildForm(
+        "autoFillOptions",
+        new FormGroup({
+          uris: new FormArray([website]),
+          autofillOnPageLoad: new FormControl(false),
+        }),
+      );
+      component.beforeSubmit = jest.fn(async () => false);
+
+      await component.submit();
+
+      expect(component["updatedCipherView"]).toBe(draft);
+      expect(component.config.saveBaseUrlOnly.enabled).toBe(false);
+      expect(website.value.uri).toBe(uri);
+      expect(draft.login.uris[0].uri).toBe(uri);
+    });
+
+    it("keeps the current default for a legacy draft without a cached choice", () => {
+      cacheDraft(CipherType.Login, null);
+
+      component.setInitialCipherFromCache();
+
+      expect(component.config.saveBaseUrlOnly.enabled).toBe(true);
+    });
+
+    it("ignores the choice from a draft of another type", () => {
+      const draft = cacheDraft(CipherType.Card);
+
+      component.setInitialCipherFromCache();
+
+      expect(component["updatedCipherView"]).not.toBe(draft);
+      expect(component.config.saveBaseUrlOnly.enabled).toBe(true);
+    });
+
+    it("does not add the option to a client that has not configured it", () => {
+      cacheDraft();
+      component.config.saveBaseUrlOnly = undefined;
+
+      component.setInitialCipherFromCache();
+
+      expect(component.config.saveBaseUrlOnly).toBeUndefined();
+    });
+
+    it.each(["edit", "partial-edit", "clone"] as const)(
+      "does not restore the capture choice in %s mode",
+      (mode) => {
+        component.config.mode = mode;
+        cacheDraft();
+
+        component.setInitialCipherFromCache();
+
+        expect(component.config.saveBaseUrlOnly.enabled).toBe(true);
+      },
+    );
+
+    it("clears the old draft choice when fresh notification data is supplied", () => {
+      cacheDraft();
+      component.config.initialValues = { username: "new-notification-user" };
+      const clear = jest.spyOn(cacheService, "clearCache");
+
+      component.setInitialCipherFromCache();
+
+      expect(clear).toHaveBeenCalled();
+      expect(component.config.saveBaseUrlOnly.enabled).toBe(true);
+    });
+
+    it("caches the current choice even when no URI changes", () => {
+      component.config.saveBaseUrlOnly.enabled = false;
+      const cache = jest.spyOn(cacheService, "cacheCipherView");
+
+      component.patchCipher((cipher) => cipher);
+
+      expect(cache).toHaveBeenCalledWith(component["updatedCipherView"], false);
+    });
+  });
+
+  it("normalizes all website URLs before verification, preserving matching, app URLs, and other fields", async () => {
+    component.config = {
+      mode: "add",
+      cipherType: CipherType.Login,
+      organizationDataOwnershipDisabled: true,
+      saveBaseUrlOnly: { enabled: true },
+    } as CipherFormConfig;
+    const firstUri = new FormControl({
+      uri: "https://example.com/login?token=secret",
+      matchDetection: 1,
+    });
+    const secondUri = new FormControl({
+      uri: "http://192.168.1.100:8080/path?token=secret#session",
+      matchDetection: 0,
+    });
+    const appUri = new FormControl({ uri: "androidapp://com.example/login", matchDetection: null });
+    const emptyUri = new FormControl({ uri: null, matchDetection: null });
+    const group = new FormGroup({
+      uris: new FormArray([firstUri, secondUri, appUri, emptyUri]),
+      autofillOnPageLoad: new FormControl(false),
+    });
+    component.registerChildForm("autoFillOptions", group);
+
+    component.beforeSubmit = jest.fn(async () => {
+      expect(firstUri.value.uri).toBe("https://example.com");
+      expect(secondUri.value.uri).toBe("http://192.168.1.100:8080");
+      return false;
+    });
+
+    await component.submit();
+
+    expect(component.beforeSubmit).toHaveBeenCalled();
+
+    expect(firstUri.value).toEqual({ uri: "https://example.com", matchDetection: 1 });
+    expect(firstUri.dirty).toBe(true);
+    expect(secondUri.value).toEqual({ uri: "http://192.168.1.100:8080", matchDetection: 0 });
+    expect(secondUri.dirty).toBe(true);
+    expect(appUri.value.uri).toBe("androidapp://com.example/login");
+    expect(appUri.pristine).toBe(true);
+    expect(emptyUri.value.uri).toBeNull();
+    expect(group.controls.autofillOnPageLoad.value).toBe(false);
+  });
+
+  it.each([
+    { mode: "edit", cipherType: CipherType.Login, saveBaseUrlOnly: { enabled: true } },
+    { mode: "partial-edit", cipherType: CipherType.Login, saveBaseUrlOnly: { enabled: true } },
+    { mode: "clone", cipherType: CipherType.Login, saveBaseUrlOnly: { enabled: true } },
+    { mode: "add", cipherType: CipherType.Card, saveBaseUrlOnly: { enabled: true } },
+    { mode: "add", cipherType: CipherType.Login, saveBaseUrlOnly: { enabled: false } },
+    { mode: "add", cipherType: CipherType.Login, saveBaseUrlOnly: undefined },
+  ])(
+    "preserves URLs when submitting $mode/$cipherType with choice $saveBaseUrlOnly",
+    async (config) => {
+      component.config = { ...config, organizationDataOwnershipDisabled: true } as CipherFormConfig;
+      const uri = "https://example.com/login?token=secret";
+      const website = new FormControl({ uri, matchDetection: null });
+      component.registerChildForm(
+        "autoFillOptions",
+        new FormGroup({
+          uris: new FormArray([website]),
+          autofillOnPageLoad: new FormControl(false),
+        }),
+      );
+      component.beforeSubmit = jest.fn(async () => false);
+
+      await component.submit();
+
+      expect(component.beforeSubmit).toHaveBeenCalled();
+      expect(website.value.uri).toBe(uri);
+      expect(website.pristine).toBe(true);
+    },
+  );
 
   describe("submit", () => {
     beforeEach(() => {

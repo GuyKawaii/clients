@@ -1664,6 +1664,7 @@ export default class MainBackground {
       this.fido2Background,
       this.#intraprocessMessageSender,
       this.messageListener,
+      this.autofillSettingsService,
     );
 
     this.overlayNotificationsBackground = new OverlayNotificationsBackground(

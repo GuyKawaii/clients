@@ -18,6 +18,7 @@ import {
   NotificationHeader,
   componentClassPrefix as notificationHeaderClassPrefix,
 } from "./header";
+import { SaveBaseUrlOption, SaveBaseUrlOptionProps } from "./save-base-url-option";
 
 export type NotificationContainerProps = NotificationBarIframeInitData & {
   handleCloseNotification: (e: Event) => void;
@@ -30,6 +31,7 @@ export type NotificationContainerProps = NotificationBarIframeInitData & {
   headerMessage?: string;
   i18n: I18n;
   isLoading?: boolean;
+  saveBaseUrlOption?: SaveBaseUrlOptionProps;
   organizations?: OrgView[];
   personalVaultIsAllowed?: boolean;
   notificationTestId: string;
@@ -46,6 +48,7 @@ export function NotificationContainer({
   headerMessage,
   i18n,
   isLoading,
+  saveBaseUrlOption,
   organizations,
   personalVaultIsAllowed = true,
   notificationTestId,
@@ -71,6 +74,11 @@ export function NotificationContainer({
               theme,
               i18n,
             })
+          : nothing
+      }
+      ${
+        type === NotificationTypes.Add && saveBaseUrlOption
+          ? SaveBaseUrlOption(saveBaseUrlOption)
           : nothing
       }
       ${NotificationFooter({

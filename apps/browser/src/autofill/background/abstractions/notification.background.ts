@@ -94,6 +94,7 @@ export type LockedVaultPendingNotificationsData = {
     message: {
       command: string;
       contextMenuOnClickData?: chrome.contextMenus.OnClickData;
+      saveBaseUrlOnly?: boolean;
       folder?: string;
       edit?: boolean;
     };
@@ -147,6 +148,7 @@ export type NotificationBackgroundExtensionMessage = {
   [key: string]: any;
   command: string;
   data?: Partial<AdjustNotificationBarMessageData> & Partial<UnlockVaultMessageData>;
+  saveBaseUrlOnly?: boolean;
   folder?: string;
   edit?: boolean;
   details?: AutofillPageDetails;
@@ -163,6 +165,7 @@ type BackgroundOnMessageHandlerParams = BackgroundMessageParam & BackgroundSende
 
 export type NotificationBackgroundExtensionMessageHandlers = {
   [key: string]: CallableFunction;
+  bgGetSaveBaseUrlOnly: () => Promise<boolean>;
   bgGetFolderData: ({ message, sender }: BackgroundOnMessageHandlerParams) => Promise<FolderView[]>;
   bgGetCollectionData: ({
     message,

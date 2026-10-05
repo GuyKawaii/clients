@@ -3,10 +3,11 @@ import { By } from "@angular/platform-browser";
 import { provideNoopAnimations } from "@angular/platform-browser/animations";
 import { ActivatedRoute, Router } from "@angular/router";
 import { mock, MockProxy } from "jest-mock-extended";
-import { BehaviorSubject, of } from "rxjs";
+import { BehaviorSubject, defer, of } from "rxjs";
 
 import { ViewCacheService } from "@bitwarden/angular/platform/view-cache";
 import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
+import { AutofillSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/autofill-settings.service";
 import { BillingAccountProfileStateService } from "@bitwarden/common/billing/abstractions";
 import { EventCollectionService, EventType } from "@bitwarden/common/dirt/event-logs";
 import { ConfigService } from "@bitwarden/common/platform/abstractions/config/config.service";
@@ -14,7 +15,7 @@ import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.servic
 import { LogService } from "@bitwarden/common/platform/abstractions/log.service";
 import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
 import { mockAccountServiceWith } from "@bitwarden/common/spec";
-import { UserId } from "@bitwarden/common/types/guid";
+import { CipherId, UserId } from "@bitwarden/common/types/guid";
 import { CipherArchiveService } from "@bitwarden/common/vault/abstractions/cipher-archive.service";
 import { CipherService } from "@bitwarden/common/vault/abstractions/cipher.service";
 import { CipherType } from "@bitwarden/common/vault/enums";
@@ -55,7 +56,9 @@ describe("AddEditComponent", () => {
   let vaultPopupAutofillService: MockProxy<VaultPopupAutofillService>;
 
   const buildConfigResponse = { originalCipher: {} } as CipherFormConfig;
-  const buildConfig = jest.fn((mode) => Promise.resolve({ ...buildConfigResponse, mode }));
+  const buildConfig = jest.fn((mode, _cipherId, cipherType) =>
+    Promise.resolve({ ...buildConfigResponse, mode, cipherType: cipherType ?? CipherType.Login }),
+  );
   const queryParams$ = new BehaviorSubject({});
   const disable = jest.fn();
   const navigate = jest.fn();
@@ -66,7 +69,11 @@ describe("AddEditComponent", () => {
   const openSimpleDialog = jest.fn().mockResolvedValue(true);
   const cipherArchiveService = mock<CipherArchiveService>();
 
+  const autofillSettingsService = mock<AutofillSettingsServiceAbstraction>();
+  autofillSettingsService.saveBaseUrlOnly$ = of(false);
+
   beforeEach(async () => {
+    autofillSettingsService.saveBaseUrlOnly$ = of(false);
     buildConfig.mockClear();
     disable.mockClear();
     navigate.mockClear();
@@ -101,6 +108,10 @@ describe("AddEditComponent", () => {
         { provide: PopupCloseWarningService, useValue: { disable } },
         { provide: Router, useValue: { navigate } },
         { provide: ActivatedRoute, useValue: { queryParams: queryParams$ } },
+        {
+          provide: AutofillSettingsServiceAbstraction,
+          useValue: autofillSettingsService,
+        },
         { provide: I18nService, useValue: { t: (key: string) => key } },
         { provide: CipherService, useValue: cipherServiceMock },
         { provide: EventCollectionService, useValue: { collect } },
@@ -204,6 +215,83 @@ describe("AddEditComponent", () => {
     });
   });
 
+  describe("new login URL prefill", () => {
+    const originalUri = "https://tenant.example.com:8080/login?token=secret#session";
+
+    it("keeps the capture choice consistent if the default changes while opening a login", fakeAsync(() => {
+      let reads = 0;
+      autofillSettingsService.saveBaseUrlOnly$ = defer(() => of(++reads === 1));
+
+      queryParams$.next({ uri: originalUri });
+      tick();
+
+      expect(component.config.initialValues.loginUri).toBe(originalUri);
+      expect(component.config.saveBaseUrlOnly).toEqual({ enabled: true, originalUri });
+    }));
+
+    it.each([true, false])(
+      "prefills Add -> Login with the setting %s",
+      fakeAsync((enabled: boolean) => {
+        autofillSettingsService.saveBaseUrlOnly$ = of(enabled);
+        jest.spyOn(BrowserApi, "getTabFromCurrentWindow").mockResolvedValue({
+          url: originalUri,
+        } as chrome.tabs.Tab);
+
+        queryParams$.next({ type: "1", prefillNameAndURIFromTab: "true" });
+        tick();
+
+        expect(component.config.initialValues.loginUri).toBe(originalUri);
+        expect(component.config.initialValues.name).toBe("tenant.example.com");
+        expect(component.config.saveBaseUrlOnly).toEqual({ enabled, originalUri });
+      }),
+    );
+
+    it("passes the original URL to the form when adding a login directly", fakeAsync(() => {
+      autofillSettingsService.saveBaseUrlOnly$ = of(true);
+
+      queryParams$.next({ uri: originalUri });
+      tick();
+
+      expect(component.config.initialValues.loginUri).toBe(originalUri);
+      expect(component.config.saveBaseUrlOnly).toEqual({ enabled: true, originalUri });
+    }));
+
+    it.each([
+      { cipherId: "existing-login" as CipherId },
+      { cipherId: "existing-login" as CipherId, clone: true },
+      { type: CipherType.Identity },
+    ])("preserves supplied URLs outside new-login creation: %j", async (params) => {
+      autofillSettingsService.saveBaseUrlOnly$ = of(true);
+
+      const initialValues = await component.setInitialValuesFromParams({
+        ...params,
+        uri: originalUri,
+      });
+
+      expect(initialValues.loginUri).toBe(originalUri);
+    });
+
+    it("preserves non-HTTP URLs when enabled", async () => {
+      autofillSettingsService.saveBaseUrlOnly$ = of(true);
+      const uri = "androidapp://com.example/login?token=secret";
+
+      const initialValues = await component.setInitialValuesFromParams({
+        type: CipherType.Login,
+        uri,
+      });
+
+      expect(initialValues.loginUri).toBe(uri);
+    });
+
+    it("leaves the URI empty when no URL is supplied", async () => {
+      autofillSettingsService.saveBaseUrlOnly$ = of(true);
+
+      const initialValues = await component.setInitialValuesFromParams({ type: CipherType.Login });
+
+      expect(initialValues.loginUri).toBeUndefined();
+    });
+  });
+
   describe("analytics", () => {
     it("does not log viewed event when mode is add", fakeAsync(() => {
       queryParams$.next({});
@@ -252,6 +340,40 @@ describe("AddEditComponent", () => {
         false,
         "444-555-666",
       );
+    }));
+  });
+
+  describe("notification base URL option", () => {
+    it.each([true, false])(
+      "retains the notification's original URL and choice %s",
+      fakeAsync((enabled: boolean) => {
+        const originalUri = "https://tenant.example.com:8080/login?token=secret#session";
+        autofillSettingsService.saveBaseUrlOnly$ = of(!enabled);
+        addEditCipherInfo$.next({
+          cipher: new CipherView(),
+          originalLoginUri: originalUri,
+          saveBaseUrlOnly: enabled,
+        });
+        queryParams$.next({});
+        tick();
+        expect(component.config.saveBaseUrlOnly).toEqual({ enabled, originalUri });
+      }),
+    );
+
+    it("clears notification context when opening a regular new login", fakeAsync(() => {
+      addEditCipherInfo$.next({
+        cipher: new CipherView(),
+        originalLoginUri: "https://example.com/login",
+        saveBaseUrlOnly: true,
+      });
+      queryParams$.next({});
+      tick();
+      expect(component.config.saveBaseUrlOnly.enabled).toBe(true);
+
+      addEditCipherInfo$.next(null);
+      queryParams$.next({});
+      tick();
+      expect(component.config.saveBaseUrlOnly).toEqual({ enabled: false, originalUri: undefined });
     }));
   });
 

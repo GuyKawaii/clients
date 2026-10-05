@@ -8,6 +8,7 @@ import {
   forwardRef,
   Input,
   input,
+  output,
   Output,
   ViewChild,
 } from "@angular/core";
@@ -64,6 +65,8 @@ import { AdvancedUriOptionDialogComponent } from "./advanced-uri-option-dialog.c
   ],
 })
 export class UriOptionComponent implements ControlValueAccessor {
+  readonly uriBlur = output<void>();
+
   // FIXME(https://bitwarden.atlassian.net/browse/CL-903): Migrate to Signals
   // eslint-disable-next-line @angular-eslint/prefer-signals
   @ViewChild("uriInput")

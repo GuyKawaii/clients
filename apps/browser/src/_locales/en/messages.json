@@ -1376,6 +1376,34 @@
     "message": "Unlock to save this login",
     "description": "User prompt to take action in order to save the login they just entered."
   },
+  "saveBaseUrlOnly": {
+    "message": "Save base URL only",
+    "description": "Checkbox label for saving only the origin of a website URL with a new login."
+  },
+  "saveBaseUrlOnlyDesc": {
+    "message": "Saves only the website address, removing paths, parameters, and session tokens.",
+    "description": "Explains the save base URL only preference."
+  },
+  "saveBaseUrlOnlySettingsDesc": {
+    "message": "Drops the path, query and fragment. Keeps subdomain and port.",
+    "description": "Helper text for the permanent base URL preference on the Autofill settings page."
+  },
+  "saveBaseUrlOnlySavedAs": {
+    "message": "Saved as",
+    "description": "Introduces the URL preview in the save login notification; followed by the website address."
+  },
+  "saveBaseUrlOnlyHelpLabel": {
+    "message": "About saving the base URL only",
+    "description": "Accessible name for the help button beside the base URL checkbox in a save login notification."
+  },
+  "saveBaseUrlOnlyHelpTitle": {
+    "message": "About saving base URLs",
+    "description": "Title of the help popover beside the base URL checkbox in a save login notification."
+  },
+  "saveBaseUrlOnlyHelp": {
+    "message": "This applies to this save only. To always save the base URL, turn on “Save base URL only” in Settings › Autofill.",
+    "description": "Explains that the notification checkbox overrides only this save and identifies the permanent setting."
+  },
   "saveLogin": {
     "message": "Save login",
     "description": "Prompt asking the user if they want to save their login details."

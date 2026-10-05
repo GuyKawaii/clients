@@ -20,6 +20,7 @@ import { BehaviorSubject, firstValueFrom, Subject, switchMap } from "rxjs";
 
 import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
 import { getUserId } from "@bitwarden/common/auth/services/account.service";
+import { trimToOriginUrl } from "@bitwarden/common/autofill/utils/trim-to-origin-url";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
 import { CipherArchiveService } from "@bitwarden/common/vault/abstractions/cipher-archive.service";
 import { CipherType, SecureNoteType } from "@bitwarden/common/vault/enums";
@@ -181,6 +182,29 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
     }
   }
 
+  /** Normalize all website URLs before saving, including an input that is still focused. */
+  private trimLoginUrisToOrigins(): void {
+    if (
+      this.config.mode !== "add" ||
+      this.config.cipherType !== CipherType.Login ||
+      !this.config.saveBaseUrlOnly?.enabled
+    ) {
+      return;
+    }
+
+    const controls = this.cipherForm.controls.autoFillOptions?.controls.uris.controls ?? [];
+    for (const control of controls) {
+      const current = control.value;
+      if (current?.uri != null) {
+        const uri = trimToOriginUrl(current.uri);
+        if (uri !== current.uri) {
+          control.setValue({ ...current, uri });
+          control.markAsDirty();
+        }
+      }
+    }
+  }
+
   disableFormFields(): void {
     this.cipherForm.disable({ emitEvent: false });
     this.formStatusChangeSubject.next("disabled");
@@ -219,7 +243,11 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
   patchCipher(updateFn: (current: CipherView) => CipherView): void {
     this.updatedCipherView = updateFn(this.updatedCipherView);
     // Cache the updated cipher
-    this.cipherFormCacheService.cacheCipherView(this.updatedCipherView);
+    const saveBaseUrlOnly =
+      this.config.mode === "add" && this.config.cipherType === CipherType.Login
+        ? (this.config.saveBaseUrlOnly?.enabled ?? null)
+        : null;
+    this.cipherFormCacheService.cacheCipherView(this.updatedCipherView, saveBaseUrlOnly);
   }
 
   /**
@@ -337,6 +365,16 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
 
     if (isEditingExistingCipher || isCreatingNewCipher) {
       this.updatedCipherView = cachedCipher;
+      const saveBaseUrlOnly = this.cipherFormCacheService.getCachedSaveBaseUrlOnly();
+      if (
+        isCreatingNewCipher &&
+        this.config.mode === "add" &&
+        this.config.cipherType === CipherType.Login &&
+        this.config.saveBaseUrlOnly &&
+        saveBaseUrlOnly != null
+      ) {
+        this.config.saveBaseUrlOnly.enabled = saveBaseUrlOnly;
+      }
     }
   }
 
@@ -395,6 +433,8 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
       }
       return;
     }
+
+    this.trimLoginUrisToOrigins();
 
     if (this.beforeSubmit) {
       const shouldSubmit = await this.beforeSubmit();

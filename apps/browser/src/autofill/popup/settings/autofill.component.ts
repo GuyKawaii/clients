@@ -155,6 +155,7 @@ export class AutofillComponent implements OnInit {
     honorBitwardenAutofillAttribute: new FormControl(),
     enableContextMenuItem: new FormControl(),
     enableAutoTotpCopy: new FormControl(),
+    saveBaseUrlOnly: new FormControl(false, { nonNullable: true }),
     clearClipboard: new FormControl(),
     defaultUriMatch: new FormControl(),
   });
@@ -384,6 +385,19 @@ export class AutofillComponent implements OnInit {
     });
 
     this.clearClipboard = await firstValueFrom(this.autofillSettingsService.clearClipboardDelay$);
+
+    this.additionalOptionsForm.controls.saveBaseUrlOnly.patchValue(
+      await firstValueFrom(this.autofillSettingsService.saveBaseUrlOnly$),
+      { emitEvent: false },
+    );
+
+    this.additionalOptionsForm.controls.saveBaseUrlOnly.valueChanges
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        // Complete the input stream on teardown so already queued writes can finish.
+        concatMap((value) => this.autofillSettingsService.setSaveBaseUrlOnly(value)),
+      )
+      .subscribe();
 
     this.additionalOptionsForm.controls.clearClipboard.patchValue(this.clearClipboard, {
       emitEvent: false,

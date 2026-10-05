@@ -52,6 +52,7 @@ export type CipherData = BaseCipherData<CipherType> & {
 export type NotificationCipherData = BaseCipherData<typeof CipherTypes.Login> & {
   login?: {
     username: string;
+    uri?: string;
   };
   organizationCategories?: OrganizationCategory[];
 };

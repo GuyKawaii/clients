@@ -89,6 +89,12 @@ type BaseCipherFormConfig = {
    */
   initialValues?: OptionalInitialValues;
 
+  /** Browser-only URL capture option for new logins; omitted by other clients and edit flows. */
+  saveBaseUrlOnly?: {
+    enabled: boolean;
+    originalUri?: string;
+  };
+
   /**
    * The list of collections that the user has visibility to. This list should include read-only collections as they
    * can still be displayed in the component for reference.
