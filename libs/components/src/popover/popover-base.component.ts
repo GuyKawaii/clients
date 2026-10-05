@@ -1,6 +1,8 @@
 import { A11yModule } from "@angular/cdk/a11y";
 import { ChangeDetectionStrategy, Component, input } from "@angular/core";
 
+import { popoverStyles } from "./popover-styles";
+
 /**
  * Internal base component for shared popover container and styles
  */
@@ -11,6 +13,8 @@ import { ChangeDetectionStrategy, Component, input } from "@angular/core";
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PopoverBaseComponent {
+  protected readonly styles = popoverStyles;
+
   /**
    * Screen-reader-accessible name for the popover dialog.
    */

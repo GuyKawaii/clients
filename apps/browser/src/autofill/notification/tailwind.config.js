@@ -9,6 +9,8 @@ module.exports = {
   corePlugins: { ...baseConfig.corePlugins, preflight: false },
   content: [
     path.resolve(__dirname, "../content/components/notification/save-base-url-option.ts"),
+    path.resolve(__dirname, "../content/components/popover/popover.ts"),
     path.resolve(__dirname, "../../../../../libs/components/src/checkbox/checkbox-styles.ts"),
+    path.resolve(__dirname, "../../../../../libs/components/src/popover/popover-styles.ts"),
   ],
 };

@@ -16,6 +16,7 @@ import { TypographyModule } from "../typography";
 
 import { PopoverBaseComponent } from "./popover-base.component";
 import { PopoverHeaderComponent } from "./popover-header.component";
+import { popoverStyles } from "./popover-styles";
 
 /**
  * Popover component for displaying contextual content in an overlay.
@@ -29,6 +30,8 @@ import { PopoverHeaderComponent } from "./popover-header.component";
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PopoverComponent {
+  protected readonly styles = popoverStyles;
+
   /** Reference to the popover content template */
   readonly templateRef = viewChild.required(TemplateRef);
 
@@ -44,6 +47,6 @@ export class PopoverComponent {
   );
 
   protected readonly titleClasses = computed(() =>
-    [this.header() ? "" : "tw-pe-7", "tw-text-fg-heading", "!tw-mb-0"].join(" "),
+    [this.header() ? "" : "tw-pe-7", this.styles.title].join(" "),
   );
 }
