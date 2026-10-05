@@ -8,6 +8,7 @@ import {
   FormControl,
 } from "@angular/forms";
 import { Meta, StoryObj, moduleMetadata } from "@storybook/angular";
+import { expect, within } from "storybook/test";
 
 import { LockIcon } from "@bitwarden/assets/svg";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
@@ -150,6 +151,49 @@ export const LongLabel: Story = {
         code: template,
       },
     },
+  },
+};
+
+export const AccessibleDescription: Story = {
+  render: () => ({
+    props: { formObj: new FormGroup({ checkbox: new FormControl(false) }) },
+    template: /*html*/ `
+      <form [formGroup]="formObj">
+        <bit-form-control>
+          <input type="checkbox" bitCheckbox formControlName="checkbox"
+            [aria-describedby]="'checkbox-description'" />
+          <bit-label>Enable feature</bit-label>
+        </bit-form-control>
+        <span id="checkbox-description">Additional context for this choice.</span>
+      </form>
+    `,
+  }),
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByRole("checkbox")).toHaveAccessibleDescription(
+      "Additional context for this choice.",
+    );
+  },
+};
+
+export const CardWithAccessibleDescription: Story = {
+  render: () => ({
+    props: { formObj: new FormGroup({ checkbox: new FormControl(false) }) },
+    template: /*html*/ `
+      <form [formGroup]="formObj">
+        <bit-form-control-card>
+          <input type="checkbox" bitCheckbox formControlName="checkbox"
+            [aria-describedby]="'card-checkbox-description'" />
+          <bit-label>Enable feature</bit-label>
+          <bit-hint>Built-in hint.</bit-hint>
+        </bit-form-control-card>
+        <span id="card-checkbox-description">Additional context.</span>
+      </form>
+    `,
+  }),
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByRole("checkbox")).toHaveAccessibleDescription(
+      "Additional context. Built-in hint.",
+    );
   },
 };
 
