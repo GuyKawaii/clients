@@ -60,7 +60,16 @@ export const ADD_EDIT_CIPHER_INFO_KEY = new UserKeyDefinition<AddEditCipherInfo>
           ? addEditCipherInfo.cipher
           : CipherView.fromJSON(addEditCipherInfo?.cipher as Jsonify<CipherView>);
 
-      return { cipher, collectionIds: addEditCipherInfo.collectionIds };
+      return {
+        cipher,
+        collectionIds: addEditCipherInfo.collectionIds,
+        ...(addEditCipherInfo.originalLoginUri != null
+          ? {
+              originalLoginUri: addEditCipherInfo.originalLoginUri,
+              saveBaseUrlOnly: addEditCipherInfo.saveBaseUrlOnly,
+            }
+          : {}),
+      };
     },
     clearOn: ["logout", "lock"],
   },

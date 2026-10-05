@@ -20,6 +20,7 @@ import { BehaviorSubject, firstValueFrom, Subject, switchMap } from "rxjs";
 
 import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
 import { getUserId } from "@bitwarden/common/auth/services/account.service";
+import { trimToOriginUrl } from "@bitwarden/common/autofill/utils/trim-to-origin-url";
 import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
 import { CipherArchiveService } from "@bitwarden/common/vault/abstractions/cipher-archive.service";
 import { CipherType, SecureNoteType } from "@bitwarden/common/vault/enums";
@@ -178,6 +179,21 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
       this.bitSubmit.disabled$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((disabled) => {
         this.submitBtn.disabled.set(disabled);
       });
+    }
+  }
+
+  /** Normalize all website URLs before saving, including an input that is still focused. */
+  trimLoginUrisToOrigins(): void {
+    const controls = this.cipherForm.controls.autoFillOptions?.controls.uris.controls ?? [];
+    for (const control of controls) {
+      const current = control.value;
+      if (current?.uri != null) {
+        const uri = trimToOriginUrl(current.uri);
+        if (uri !== current.uri) {
+          control.setValue({ ...current, uri });
+          control.markAsDirty();
+        }
+      }
     }
   }
 

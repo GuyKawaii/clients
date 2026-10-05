@@ -1,7 +1,7 @@
 // FIXME: Update this file to be type safe and remove this and next line
 // @ts-strict-ignore
 import { CommonModule } from "@angular/common";
-import { Component, OnInit, OnDestroy, viewChild } from "@angular/core";
+import { Component, OnInit, OnDestroy, inject, viewChild } from "@angular/core";
 import { takeUntilDestroyed, toSignal } from "@angular/core/rxjs-interop";
 import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, Params, Router } from "@angular/router";
@@ -11,6 +11,8 @@ import { JslibModule } from "@bitwarden/angular/jslib.module";
 import { BrowserPremiumUpgradePromptService } from "@bitwarden/browser/billing/popup/services/browser-premium-upgrade-prompt.service";
 import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
 import { getUserId } from "@bitwarden/common/auth/services/account.service";
+import { AutofillSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/autofill-settings.service";
+import { trimToOriginUrl } from "@bitwarden/common/autofill/utils/trim-to-origin-url";
 import { EventCollectionService, EventType } from "@bitwarden/common/dirt/event-logs";
 import { FeatureFlag } from "@bitwarden/common/enums/feature-flag.enum";
 import { ConfigService } from "@bitwarden/common/platform/abstractions/config/config.service";
@@ -206,6 +208,25 @@ export class AddEditComponent implements OnInit, OnDestroy {
   routeAfterDeletion: ROUTES_AFTER_EDIT_DELETION = "/tabs/vault";
   protected saveAndFillEnabled = false;
   private fillOnSuccessfulSave = false;
+  protected originalLoginUri?: string;
+  protected saveBaseUrlOnly = false;
+  private readonly autofillSettingsService = inject(AutofillSettingsServiceAbstraction);
+
+  private async initializeNotificationUrl(info: AddEditCipherInfo | null, originalUri?: string) {
+    this.originalLoginUri = info?.originalLoginUri ?? originalUri;
+    this.saveBaseUrlOnly =
+      info?.saveBaseUrlOnly ??
+      (await firstValueFrom(this.autofillSettingsService.saveBaseUrlOnly$));
+  }
+
+  private configureBaseUrlOption(config: CipherFormConfig) {
+    if (config.mode === "add" && config.cipherType === CipherType.Login) {
+      config.saveBaseUrlOnly = {
+        enabled: this.saveBaseUrlOnly,
+        originalUri: this.originalLoginUri ?? config.initialValues?.loginUri,
+      };
+    }
+  }
 
   get loading() {
     return this.config == null;
@@ -306,10 +327,12 @@ export class AddEditComponent implements OnInit, OnDestroy {
     );
 
     if (latestCipherInfo != null) {
+      await this.initializeNotificationUrl(latestCipherInfo);
       this.config = {
         ...this.config,
         initialValues: mapAddEditCipherInfoToInitialValues(latestCipherInfo),
       };
+      this.configureBaseUrlOption(this.config);
 
       // Be sure to clear the "cached" cipher info, so it doesn't get used again
       await this.cipherService.setAddEditCipherInfo(null, activeUserId);
@@ -320,6 +343,15 @@ export class AddEditComponent implements OnInit, OnDestroy {
    * Called before the form is submitted, allowing us to handle Fido2 user verification.
    */
   protected checkFido2UserVerification: () => Promise<boolean> = async () => {
+    const form = this.cipherFormComponent();
+    if (
+      (this.config?.saveBaseUrlOnly?.enabled ?? this.saveBaseUrlOnly) &&
+      this.config?.mode === "add" &&
+      this.config.cipherType === CipherType.Login
+    ) {
+      form?.trimLoginUrisToOrigins();
+    }
+
     if (!this.inFido2PopoutWindow) {
       // Not in a Fido2 popout window, no need to handle user verification.
       return true;
@@ -448,6 +480,10 @@ export class AddEditComponent implements OnInit, OnDestroy {
             this.cipherService.addEditCipherInfo$(activeUserId),
           );
 
+          await this.initializeNotificationUrl(
+            cachedCipherInfo,
+            config.initialValues.originalLoginUri ?? config.initialValues.loginUri,
+          );
           if (cachedCipherInfo != null) {
             // Cached cipher info has priority over queryParams
             config.initialValues = {
@@ -457,6 +493,8 @@ export class AddEditComponent implements OnInit, OnDestroy {
             // Be sure to clear the "cached" cipher info, so it doesn't get used again
             await this.cipherService.setAddEditCipherInfo(null, activeUserId);
           }
+
+          this.configureBaseUrlOption(config);
 
           if (["edit", "partial-edit"].includes(config.mode) && config.originalCipher?.id) {
             this.canDeleteCipher$ = this.cipherAuthorizationService.canDeleteCipher$(
@@ -514,6 +552,17 @@ export class AddEditComponent implements OnInit, OnDestroy {
 
       initialValues.loginUri = tab.url;
       initialValues.name = Utils.getHostname(tab.url);
+    }
+
+    if (
+      params.cipherId == null &&
+      (params.type ?? CipherType.Login) === CipherType.Login &&
+      initialValues.loginUri != null
+    ) {
+      initialValues.originalLoginUri = initialValues.loginUri;
+      if (await firstValueFrom(this.autofillSettingsService.saveBaseUrlOnly$)) {
+        initialValues.loginUri = trimToOriginUrl(initialValues.loginUri);
+      }
     }
 
     return initialValues;

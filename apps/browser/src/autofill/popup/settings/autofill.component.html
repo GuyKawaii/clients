@@ -337,6 +337,16 @@
             <input formControlName="enableAutoTotpCopy" bitCheckbox id="totp" type="checkbox" />
             <bit-label for="totp">{{ "enableAutoTotpCopy" | i18n }}</bit-label>
           </bit-form-control>
+          <bit-form-control>
+            <input
+              formControlName="saveBaseUrlOnly"
+              bitCheckbox
+              id="save-base-url-only"
+              type="checkbox"
+            />
+            <bit-label for="save-base-url-only">{{ "saveBaseUrlOnly" | i18n }}</bit-label>
+            <bit-hint class="tw-text-sm">{{ "saveBaseUrlOnlySettingsDesc" | i18n }}</bit-hint>
+          </bit-form-control>
           <bit-form-field
             id="clearClipboardField"
             [disableMargin]="isDefaultUriMatchDisabledByPolicy"

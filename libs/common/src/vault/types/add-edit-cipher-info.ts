@@ -9,4 +9,7 @@ import { CipherView } from "../models/view/cipher.view";
 export type AddEditCipherInfo = {
   cipher: CipherView;
   collectionIds?: string[];
+  /** Original URL for a new login opened from the auto-save notification. */
+  originalLoginUri?: string;
+  saveBaseUrlOnly?: boolean;
 };

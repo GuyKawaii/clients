@@ -17,8 +17,10 @@ import {
   NOTIFICATION_BAR_LIFESPAN_MS,
   UPDATE_PASSWORD,
 } from "@bitwarden/common/autofill/constants";
+import { AutofillSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/autofill-settings.service";
 import { DomainSettingsService } from "@bitwarden/common/autofill/services/domain-settings.service";
 import { UserNotificationSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/user-notification-settings.service";
+import { trimToOriginUrl } from "@bitwarden/common/autofill/utils/trim-to-origin-url";
 import { ProductTierType } from "@bitwarden/common/billing/enums/product-tier-type.enum";
 import { FeatureFlag } from "@bitwarden/common/enums/feature-flag.enum";
 import { NeverDomains } from "@bitwarden/common/models/domain/domain-service";
@@ -140,6 +142,7 @@ export default class NotificationBackground {
     bgGetFolderData: () => this.getFolderData(),
     bgGetCollectionData: ({ message }) => this.getCollectionData(message),
     bgGetOrgData: () => this.getOrgData(),
+    bgGetSaveBaseUrlOnly: () => firstValueFrom(this.autofillSettingsService.saveBaseUrlOnly$),
     bgNeverSave: ({ sender }) => this.withSenderTab(sender, (tab) => this.saveNever(tab)),
     bgOpenAddEditVaultItemPopout: ({ message, sender }) =>
       this.withSenderTab(sender, (tab) => this.openAddEditVaultItem(message, tab)),
@@ -180,6 +183,7 @@ export default class NotificationBackground {
     private fido2Background: Fido2Background,
     private intraprocessMessageSender: IntraprocessMessageSender,
     private messageListener: MessageListener,
+    private autofillSettingsService: AutofillSettingsServiceAbstraction,
   ) {}
 
   init() {
@@ -355,7 +359,7 @@ export default class NotificationBackground {
       favorite,
       ...(organizationCategories.length > 0 ? { organizationCategories } : {}),
       icon: buildCipherIcon(iconsServerUrl, view, showFavicons),
-      login: login?.username ? { username: login.username } : undefined,
+      login: login ? { username: login.username, uri: login.uris?.[0]?.uri } : undefined,
     };
   }
 
@@ -1380,6 +1384,7 @@ export default class NotificationBackground {
                 command: message.command,
                 edit: message.edit,
                 folder: message.folder,
+                saveBaseUrlOnly: message.saveBaseUrlOnly,
               },
               [RETRY_SENDER]: sender,
             },
@@ -1390,7 +1395,14 @@ export default class NotificationBackground {
       return;
     }
 
-    await this.saveOrUpdateCredentials(tab, message.cipherId, message?.edit, message.folder);
+    await this.saveOrUpdateCredentials(
+      tab,
+      message.cipherId,
+      message?.edit,
+      message.folder,
+      false,
+      message.saveBaseUrlOnly,
+    );
   }
 
   async handleCipherUpdateRepromptResponse(message: NotificationBackgroundExtensionMessage) {
@@ -1421,6 +1433,7 @@ export default class NotificationBackground {
     edit?: boolean,
     folderId?: string,
     skipReprompt: boolean = false,
+    saveBaseUrlOnly?: boolean,
   ) {
     const resolvedEdit = edit ?? false;
     for (let i = this.notificationQueue.length - 1; i >= 0; i--) {
@@ -1492,10 +1505,16 @@ export default class NotificationBackground {
         folderId != null && (await this.folderExists(folderId, activeUserId))
           ? folderId
           : undefined;
-      const newCipher = this.convertAddLoginQueueMessageToCipherView(queueMessage, folderId);
+      const trimUri =
+        saveBaseUrlOnly ?? (await firstValueFrom(this.autofillSettingsService.saveBaseUrlOnly$));
+      const newCipher = this.convertAddLoginQueueMessageToCipherView(
+        queueMessage,
+        folderId,
+        trimUri,
+      );
 
       if (resolvedEdit) {
-        await this.editItem(newCipher, activeUserId, tab);
+        await this.editItem(newCipher, activeUserId, tab, queueMessage.data.uri, trimUri);
         await BrowserApi.tabSendMessage(tab, { command: "closeNotificationBar" });
         return;
       }
@@ -1604,11 +1623,18 @@ export default class NotificationBackground {
    * @param userId - The active account user ID
    * @param senderTab - The tab that the message was sent from
    */
-  private async editItem(cipherView: CipherView, userId: UserId, senderTab: chrome.tabs.Tab) {
+  private async editItem(
+    cipherView: CipherView,
+    userId: UserId,
+    senderTab: chrome.tabs.Tab,
+    originalLoginUri?: string,
+    saveBaseUrlOnly?: boolean,
+  ) {
     await this.cipherService.setAddEditCipherInfo(
       {
         cipher: cipherView,
         collectionIds: cipherView.collectionIds,
+        ...(originalLoginUri != null ? { originalLoginUri, saveBaseUrlOnly } : {}),
       },
       userId,
     );
@@ -1630,12 +1656,22 @@ export default class NotificationBackground {
     const queueItem = this.notificationQueue.find((item) => item.tab.id === senderTab.id);
 
     if (queueItem?.type === NotificationType.AddLogin) {
-      const cipherView = this.convertAddLoginQueueMessageToCipherView(queueItem);
+      const trimUri =
+        message.saveBaseUrlOnly ??
+        (await firstValueFrom(this.autofillSettingsService.saveBaseUrlOnly$));
+      const cipherView = this.convertAddLoginQueueMessageToCipherView(
+        queueItem,
+        undefined,
+        trimUri,
+      );
       cipherView.organizationId = organizationId;
       cipherView.folderId = folder;
 
       if (userId) {
-        await this.cipherService.setAddEditCipherInfo({ cipher: cipherView }, userId);
+        await this.cipherService.setAddEditCipherInfo(
+          { cipher: cipherView, originalLoginUri: queueItem.data.uri, saveBaseUrlOnly: trimUri },
+          userId,
+        );
       }
 
       await this.openAddEditVaultItemPopout(senderTab);
@@ -2006,9 +2042,10 @@ export default class NotificationBackground {
   private convertAddLoginQueueMessageToCipherView(
     message: AddLoginQueueMessage,
     folderId?: string,
+    saveBaseUrlOnly = false,
   ): CipherView {
     const uriView = new LoginUriView();
-    uriView.uri = message.data.uri;
+    uriView.uri = saveBaseUrlOnly ? trimToOriginUrl(message.data.uri) : message.data.uri;
 
     const loginView = new LoginView();
     loginView.uris = [uriView];

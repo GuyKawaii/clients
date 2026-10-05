@@ -57,6 +57,7 @@ describe("AutofillOptionsComponent", () => {
     domainSettingsService.resolvedDefaultUriMatchStrategy$ = new BehaviorSubject(null);
 
     autofillSettingsService = mock<AutofillSettingsServiceAbstraction>();
+    autofillSettingsService.setSaveBaseUrlOnly.mockResolvedValue(undefined);
     autofillSettingsService.autofillOnPageLoadDefault$ = new BehaviorSubject(false);
     autofillSettingsService.autofillOnPageLoad$ = new BehaviorSubject(true);
 
@@ -86,6 +87,232 @@ describe("AutofillOptionsComponent", () => {
 
   it("should create", () => {
     expect(component).toBeTruthy();
+  });
+
+  describe("base URL capture option", () => {
+    const originalUri = "https://tenant.example.com:8080/login?token=secret#session";
+    const origin = "https://tenant.example.com:8080";
+
+    function initialize(enabled = false, uri = originalUri, original = originalUri) {
+      cipherFormContainer.config.mode = "add";
+      cipherFormContainer.config.initialValues = { loginUri: uri };
+      cipherFormContainer.config.saveBaseUrlOnly = { enabled, originalUri: original };
+      // Configuration is normally available before the child component is constructed.
+      fixture = TestBed.createComponent(AutofillOptionsComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    }
+
+    async function toggle(enabled: boolean) {
+      const checkbox = fixture.nativeElement.querySelector(
+        "#save-base-url-only",
+      ) as HTMLInputElement;
+      checkbox.checked = enabled;
+      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    it.each([true, false])("shows the remembered choice %s and its URI", (enabled) => {
+      initialize(enabled);
+      const checkbox = fixture.nativeElement.querySelector(
+        "#save-base-url-only",
+      ) as HTMLInputElement;
+      expect(checkbox.checked).toBe(enabled);
+      expect(checkbox.getAttribute("aria-describedby")).toBe("save-base-url-only-desc");
+      expect(fixture.nativeElement.querySelector("#save-base-url-only-desc").textContent).toContain(
+        "saveBaseUrlOnlyDesc",
+      );
+      expect(component.autofillOptionsForm.controls.uris.at(0).value.uri).toBe(
+        enabled ? origin : originalUri,
+      );
+    });
+
+    it("trims and restores every website URI, preserves matching, and persists", async () => {
+      initialize();
+      const first = component.autofillOptionsForm.controls.uris.at(0);
+      first.setValue({ uri: originalUri, matchDetection: UriMatchStrategy.Exact });
+      component.addUri({ uri: "https://other.example.com/path", matchDetection: null });
+
+      await toggle(true);
+      expect(first.value).toEqual({ uri: origin, matchDetection: UriMatchStrategy.Exact });
+      expect(first.dirty).toBe(true);
+      expect(component.autofillOptionsForm.controls.uris.at(1).value.uri).toBe(
+        "https://other.example.com",
+      );
+      expect(autofillSettingsService.setSaveBaseUrlOnly).toHaveBeenLastCalledWith(true);
+      expect(cipherFormContainer.config.saveBaseUrlOnly.enabled).toBe(true);
+
+      await toggle(false);
+      expect(first.value.uri).toBe(originalUri);
+      expect(component.autofillOptionsForm.controls.uris.at(1).value.uri).toBe(
+        "https://other.example.com/path",
+      );
+      expect(autofillSettingsService.setSaveBaseUrlOnly).toHaveBeenLastCalledWith(false);
+      expect(cipherFormContainer.config.saveBaseUrlOnly.enabled).toBe(false);
+    });
+
+    it("restores the captured full URL when the prefilled URI was already trimmed", async () => {
+      initialize(true, origin);
+      await toggle(false);
+      expect(component.autofillOptionsForm.controls.uris.at(0).value.uri).toBe(originalUri);
+    });
+
+    it("shows one checkbox after all websites and before Add website", () => {
+      initialize();
+      component.addUri({ uri: "https://other.example.com/login", matchDetection: null });
+      fixture.detectChanges();
+      const rows = fixture.nativeElement.querySelectorAll("vault-autofill-uri-option");
+      const checkbox = fixture.nativeElement.querySelector("#save-base-url-only");
+      const addWebsite = fixture.nativeElement.querySelector("button[bitLink]");
+
+      expect(fixture.nativeElement.querySelectorAll("#save-base-url-only")).toHaveLength(1);
+      expect(rows[rows.length - 1].compareDocumentPosition(checkbox)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(checkbox.compareDocumentPosition(addWebsite)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+
+    it("initializes and restores every prefilled website when the remembered choice is on", async () => {
+      const cipher = new CipherView();
+      cipher.login.uris = [originalUri, "http://192.168.1.100:8080/path?token=secret"].map((uri) =>
+        Object.assign(new LoginUriView(), { uri, match: UriMatchStrategy.Exact }),
+      );
+      getInitialCipherView.mockReturnValueOnce(cipher);
+      initialize(true);
+
+      expect(component.autofillOptionsForm.value.uris.map((value) => value.uri)).toEqual([
+        origin,
+        "http://192.168.1.100:8080",
+      ]);
+      await toggle(false);
+      expect(component.autofillOptionsForm.value.uris.map((value) => value.uri)).toEqual([
+        originalUri,
+        "http://192.168.1.100:8080/path?token=secret",
+      ]);
+    });
+
+    it("trims newly added websites and restores their original URLs", async () => {
+      initialize(true);
+      const addedUri = "https://second.example.com:8443/login?token=secret#session";
+      component.addUri({ uri: addedUri, matchDetection: UriMatchStrategy.Host });
+      expect(component.autofillOptionsForm.controls.uris.at(1).value).toEqual({
+        uri: "https://second.example.com:8443",
+        matchDetection: UriMatchStrategy.Host,
+      });
+
+      await toggle(false);
+      expect(component.autofillOptionsForm.controls.uris.at(1).value.uri).toBe(addedUri);
+    });
+
+    it("lets users finish typing a new website, then trims it on blur and can restore it", async () => {
+      initialize(true);
+      component.addUri();
+      fixture.detectChanges();
+      const inputs = fixture.nativeElement.querySelectorAll("vault-autofill-uri-option input");
+      const uriInput = inputs[inputs.length - 1] as HTMLInputElement;
+      const typedUri = "https://second.example.com/login?token=secret";
+      uriInput.value = typedUri;
+      uriInput.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(component.autofillOptionsForm.controls.uris.at(1).value.uri).toBe(typedUri);
+
+      uriInput.dispatchEvent(new Event("blur"));
+      fixture.detectChanges();
+      expect(uriInput.value).toBe("https://second.example.com");
+      const patchCipher = cipherFormContainer.patchCipher.mock.lastCall[0];
+      expect(patchCipher(new CipherView()).login.uris[1].uri).toBe("https://second.example.com");
+
+      await toggle(false);
+      expect(component.autofillOptionsForm.controls.uris.at(1).value.uri).toBe(typedUri);
+    });
+
+    it("keeps original URLs with their fields after reordering and removal", async () => {
+      initialize();
+      const secondUri = "https://tenant.example.com:8080/second?token=other";
+      const thirdUri = "https://third.example.com/login?token=third";
+      component.addUri({ uri: secondUri, matchDetection: UriMatchStrategy.Exact });
+      component.addUri({ uri: thirdUri, matchDetection: UriMatchStrategy.Host });
+      await toggle(true);
+      component.onUriItemDrop({ previousIndex: 1, currentIndex: 0 } as CdkDragDrop<HTMLDivElement>);
+      component.removeUri(1);
+
+      await toggle(false);
+      expect(component.autofillOptionsForm.value.uris).toEqual([
+        { uri: secondUri, matchDetection: UriMatchStrategy.Exact },
+        { uri: thirdUri, matchDetection: UriMatchStrategy.Host },
+      ]);
+    });
+
+    it("updates the current choice immediately while preference writes are pending", async () => {
+      let finishFirstWrite: () => void;
+      autofillSettingsService.setSaveBaseUrlOnly.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (finishFirstWrite = resolve)),
+      );
+      initialize();
+      component["saveBaseUrlOnlyControl"].setValue(true);
+      component["saveBaseUrlOnlyControl"].setValue(false);
+
+      expect(cipherFormContainer.config.saveBaseUrlOnly.enabled).toBe(false);
+      expect(component.autofillOptionsForm.controls.uris.at(0).value.uri).toBe(originalUri);
+
+      finishFirstWrite();
+      await fixture.whenStable();
+      expect(autofillSettingsService.setSaveBaseUrlOnly).toHaveBeenLastCalledWith(false);
+    });
+
+    it("preserves manually edited URLs when unchecking and trims their latest value when rechecking", async () => {
+      initialize(true);
+      const first = component.autofillOptionsForm.controls.uris.at(0);
+      const editedUri = "https://custom.example.com:8080/other?token=latest";
+      first.setValue({ ...first.value, uri: editedUri });
+
+      await toggle(false);
+      expect(first.value.uri).toBe(editedUri);
+      await toggle(true);
+      expect(first.value.uri).toBe("https://custom.example.com:8080");
+      await toggle(false);
+      expect(first.value.uri).toBe(editedUri);
+    });
+
+    it("preserves non-HTTP URLs", async () => {
+      const uri = "androidapp://com.example/login?token=secret";
+      initialize(false, uri, uri);
+      await toggle(true);
+      expect(component.autofillOptionsForm.controls.uris.at(0).value.uri).toBe(uri);
+    });
+
+    it("remembers the preference even when the first URI is empty", async () => {
+      initialize(false, null, null);
+      await toggle(true);
+      expect(component.autofillOptionsForm.controls.uris.at(0).value.uri).toBeNull();
+      expect(autofillSettingsService.setSaveBaseUrlOnly).toHaveBeenCalledWith(true);
+    });
+
+    it("disables the control during form submission", () => {
+      initialize();
+      formStatusChange$.next("disabled");
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector("#save-base-url-only").disabled).toBe(true);
+      formStatusChange$.next("enabled");
+    });
+
+    it.each(["edit", "partial-edit", "clone"] as const)(
+      "hides the option and preserves the URI in %s mode",
+      (mode) => {
+        initialize(false);
+        cipherFormContainer.config.mode = mode;
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector("#save-base-url-only")).toBeNull();
+        expect(component.autofillOptionsForm.controls.uris.at(0).value.uri).toBe(originalUri);
+      },
+    );
+
+    it("omits the control when the client has not configured the browser feature", () => {
+      cipherFormContainer.config.mode = "add";
+      cipherFormContainer.config.saveBaseUrlOnly = undefined;
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector("#save-base-url-only")).toBeNull();
+    });
   });
 
   it("registers 'autoFillOptionsForm' form with CipherFormContainer", () => {
