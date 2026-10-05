@@ -15,11 +15,15 @@ export type SaveBaseUrlOptionProps = {
 
 /** A prompt-local choice; persistence belongs to the Autofill settings page. */
 export function SaveBaseUrlOption({ uri, enabled, i18n, onChange }: SaveBaseUrlOptionProps) {
-  if (!uri || trimToOriginUrl(uri) === uri) {
+  if (!uri) {
+    return nothing;
+  }
+  const originUri = trimToOriginUrl(uri);
+  if (originUri === uri) {
     return nothing;
   }
 
-  const savedUri = enabled ? trimToOriginUrl(uri) : uri;
+  const savedUri = enabled ? originUri : uri;
   return html`
     <div data-testid="save-base-url-option" class="tw-mx-3 tw-text-sm tw-text-main">
       <div class="tw-flex tw-items-center tw-gap-1">
@@ -30,8 +34,8 @@ export function SaveBaseUrlOption({ uri, enabled, i18n, onChange }: SaveBaseUrlO
           <input
             id="save-base-url-only"
             type="checkbox"
-            class=${checkboxInputClasses.join(" ")}
-            style=${`--check-mask: ${checkboxCheckMask}; margin: 0 !important;`}
+            class=${[...checkboxInputClasses, "tw-m-0"].join(" ")}
+            style=${`--check-mask: ${checkboxCheckMask}`}
             .checked=${enabled}
             @change=${(event: Event) => onChange((event.target as HTMLInputElement).checked)}
           />

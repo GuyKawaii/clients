@@ -2,7 +2,7 @@ import { html, TemplateResult } from "lit";
 
 import { popoverStyles } from "@bitwarden/components/popover-styles";
 
-type PopoverProps = {
+export type PopoverProps = {
   /** Unique, stable ID for this popover and its accessible labels. */
   id: string;
   title: string;
@@ -43,7 +43,9 @@ export function Popover({
 
     const anchor = trigger.getBoundingClientRect();
     const bounds = boundary ? root.closest<HTMLElement>(boundary)?.getBoundingClientRect() : null;
-    const width = Math.min(360, (bounds?.width || window.innerWidth) - 24);
+    const leftBoundary = Math.max(0, bounds?.left ?? 0);
+    const rightBoundary = Math.min(window.innerWidth, bounds?.right ?? window.innerWidth);
+    const width = Math.min(360, Math.max(0, rightBoundary - leftBoundary - 24));
     panel.style.width = `${width}px`;
     panel.style.paddingTop = "0";
     panel.style.paddingBottom = "8px";
@@ -52,11 +54,8 @@ export function Popover({
     panel.style.paddingTop = above ? "0" : "8px";
     panel.style.paddingBottom = above ? "8px" : "0";
     const left = Math.max(
-      (bounds?.left ?? 0) + 12,
-      Math.min(
-        anchor.left + anchor.width / 2 - width / 2,
-        (bounds?.right || window.innerWidth) - width - 12,
-      ),
+      leftBoundary + 12,
+      Math.min(anchor.left + anchor.width / 2 - width / 2, rightBoundary - width - 12),
     );
     panel.style.left = `${left}px`;
     panel.style.top = `${above ? anchor.top - height : anchor.bottom}px`;
@@ -96,7 +95,7 @@ export function Popover({
         }
       }}
       @keydown=${(event: KeyboardEvent) => {
-        if (event.key === "Escape") {
+        if (event.key === "Escape" && !elements(event).panel.hidden) {
           event.preventDefault();
           event.stopPropagation();
           close(event);

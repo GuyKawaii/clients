@@ -2944,7 +2944,8 @@ describe("NotificationBackground", () => {
           expect(createWithServerSpy).not.toHaveBeenCalled();
         });
 
-        it("updates the password if the notification message type is for ChangePassword", async () => {
+        it("updates the password without trimming saved URIs when the default is enabled", async () => {
+          autofillSettingsService.saveBaseUrlOnly$ = of(true);
           const tab = createChromeTabMock({ id: 1, url: "https://example.com" });
           const sender = mock<chrome.runtime.MessageSender>({ tab });
           const message: NotificationBackgroundExtensionMessage = {
@@ -2962,7 +2963,10 @@ describe("NotificationBackground", () => {
           const cipherView = mock<CipherView>({
             id: "testId",
             name: "testItemName",
-            login: { username: "testUser" },
+            login: {
+              username: "testUser",
+              uris: [{ uri: "https://example.com/login?existing=keep" }],
+            },
             reprompt: CipherRepromptType.None,
           });
           getDecryptedCipherByIdSpy.mockResolvedValueOnce(cipherView);
@@ -2982,6 +2986,7 @@ describe("NotificationBackground", () => {
             false,
           );
           expect(updateWithServerSpy).toHaveBeenCalled();
+          expect(cipherView.login.uris[0].uri).toBe("https://example.com/login?existing=keep");
           expect(tabSendMessageDataSpy).toHaveBeenCalledWith(
             sender.tab,
             "saveCipherAttemptCompleted",

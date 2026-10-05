@@ -351,7 +351,7 @@ describe("AddEditComponent", () => {
       component.config = { mode: "add", cipherType: CipherType.Login } as CipherFormConfig;
       component["originalLoginUri"] = "https://example.com/login";
       component["saveBaseUrlOnly"] = true;
-      await component["checkFido2UserVerification"]();
+      await component["prepareForSubmit"]();
       expect(form.trimLoginUrisToOrigins).toHaveBeenCalled();
     });
 
@@ -365,7 +365,7 @@ describe("AddEditComponent", () => {
       } as CipherFormConfig;
       component["saveBaseUrlOnly"] = true;
 
-      await component["checkFido2UserVerification"]();
+      await component["prepareForSubmit"]();
 
       expect(form.trimLoginUrisToOrigins).not.toHaveBeenCalled();
     });

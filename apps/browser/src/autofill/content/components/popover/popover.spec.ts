@@ -32,6 +32,32 @@ describe("Popover", () => {
     });
   }
 
+  it("leaves Escape available to the parent when the popover is closed", () => {
+    render(popover("help"), document.body);
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-controls="help"]')!;
+    const escape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    trigger.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(false);
+    expect(document.getElementById("help")!.hidden).toBe(true);
+  });
+
+  it("keeps the panel on screen when its containing card extends beyond the viewport", () => {
+    render(html`<div data-card>${popover("help", "[data-card]")}</div>`, document.body);
+    const card = document.querySelector<HTMLElement>("[data-card]")!;
+    const panel = document.getElementById("help")!;
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-controls="help"]')!;
+    jest.spyOn(card, "getBoundingClientRect").mockReturnValue(rectangle(-40, 0, 400, 400));
+    jest.spyOn(panel, "getBoundingClientRect").mockReturnValue(rectangle(0, 0, 336, 120));
+    jest.spyOn(trigger, "getBoundingClientRect").mockReturnValue(rectangle(20, 40, 16, 16));
+    trigger.click();
+    expect(panel.style.width).toBe("336px");
+    expect(panel.style.left).toBe("12px");
+  });
+
   it("keeps separate popovers independent and restores focus on Escape", () => {
     render(html`${popover("first")}${popover("second")}`, document.body);
     const first = document.getElementById("first")!;

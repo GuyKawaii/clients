@@ -17,10 +17,6 @@ export const checkboxInputClasses = [
   "tw-h-6",
   "tw-w-6",
   "tw-rounded-lg",
-  // negative margin to negate the positioning added by the sizing
-  "!-tw-mt-px",
-  "!-tw-mb-px",
-  "!-tw-ms-px",
   "hover:tw-bg-bg-hover",
   "focus-visible:tw-bg-bg-hover",
 

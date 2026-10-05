@@ -10,11 +10,11 @@ jest.mock("@lit-labs/signals", () => ({
   signal: jest.fn((value) => ({ get: () => value })),
 }));
 jest.mock("../content/components/notification/body", () => ({
-  NotificationBody: () => null,
+  NotificationBody: (): null => null,
   componentClassPrefix: "body",
 }));
 jest.mock("../content/components/notification/header", () => ({
-  NotificationHeader: () => null,
+  NotificationHeader: (): null => null,
   componentClassPrefix: "header",
 }));
 jest.mock("../content/components/notification/footer", () => {
