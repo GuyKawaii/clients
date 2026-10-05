@@ -14,6 +14,7 @@
           [formControlName]="i"
           (remove)="removeUri(i)"
           (onKeydown)="onUriItemKeydown($event, i)"
+          (uriBlur)="trimUri(uri)"
           [canReorder]="uriControls.length > 1 && autofillOptionsForm.enabled"
           [canRemove]="uriControls.length > 1 && autofillOptionsForm.enabled"
           [defaultMatchDetection]="defaultMatchDetection$ | async"
@@ -22,6 +23,26 @@
         ></vault-autofill-uri-option>
       }
     </ng-container>
+
+    @if (saveBaseUrlOnlyOption) {
+      <bit-form-control
+        disableMargin
+        class="tw-my-2 -tw-ms-[3px] [&>label]:tw-gap-1"
+        [bitTooltip]="'saveBaseUrlOnlyDesc' | i18n"
+      >
+        <input
+          bitCheckbox
+          type="checkbox"
+          id="save-base-url-only"
+          [formControl]="saveBaseUrlOnlyControl"
+          [aria-describedby]="'save-base-url-only-desc'"
+        />
+        <bit-label for="save-base-url-only">{{ "saveBaseUrlOnly" | i18n }}</bit-label>
+      </bit-form-control>
+      <span id="save-base-url-only-desc" class="tw-sr-only">{{
+        "saveBaseUrlOnlyDesc" | i18n
+      }}</span>
+    }
 
     @if (autofillOptionsForm.enabled) {
       @if (showAddAppDropdown()) {

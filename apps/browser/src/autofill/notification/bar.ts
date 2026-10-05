@@ -24,6 +24,7 @@ import { isAtRiskPasswordNotification } from "./utils";
 
 let notificationBarIframeInitData: NotificationBarIframeInitData = {};
 let windowMessageOrigin: string;
+let saveBaseUrlOnly: boolean | undefined;
 
 const urlParams = new URLSearchParams(globalThis.location.search);
 const trustedParentOrigin = urlParams.get("parentOrigin");
@@ -76,6 +77,11 @@ function getI18n() {
     notificationUpdate: chrome.i18n.getMessage("notificationChangeSave"),
     notificationViewAria: chrome.i18n.getMessage("notificationViewAria"),
     saveAction: chrome.i18n.getMessage("notificationAddSave"),
+    saveBaseUrlOnly: chrome.i18n.getMessage("saveBaseUrlOnly"),
+    saveBaseUrlOnlySavedAs: chrome.i18n.getMessage("saveBaseUrlOnlySavedAs"),
+    saveBaseUrlOnlyHelp: chrome.i18n.getMessage("saveBaseUrlOnlyHelp"),
+    saveBaseUrlOnlyHelpLabel: chrome.i18n.getMessage("saveBaseUrlOnlyHelpLabel"),
+    saveBaseUrlOnlyHelpTitle: chrome.i18n.getMessage("saveBaseUrlOnlyHelpTitle"),
     saveAsNewLoginAction: chrome.i18n.getMessage("saveAsNewLoginAction"),
     saveFailure: chrome.i18n.getMessage("saveFailure"),
     saveFailureDetails: chrome.i18n.getMessage("saveFailureDetails"),
@@ -175,13 +181,14 @@ export function getNotificationTestId(
   }[notificationType];
 }
 
-async function initNotificationBar(message: NotificationBarWindowMessage) {
+export async function initNotificationBar(message: NotificationBarWindowMessage) {
   const { initData } = message;
   if (!initData) {
     return;
   }
 
   notificationBarIframeInitData = initData;
+  saveBaseUrlOnly = undefined;
 
   if (initData.isConfirmation) {
     return handleSaveCipherConfirmation({
@@ -197,6 +204,8 @@ async function initNotificationBar(message: NotificationBarWindowMessage) {
   } = notificationBarIframeInitData;
   const i18n = getI18n();
   const resolvedTheme = getResolvedTheme(theme ?? ThemeTypes.Light);
+  document.documentElement.classList.toggle("theme_dark", resolvedTheme === ThemeTypes.Dark);
+  document.documentElement.classList.toggle("theme_light", resolvedTheme === ThemeTypes.Light);
 
   const notificationType = resolveNotificationType(notificationBarIframeInitData);
   const headerMessage = getNotificationHeaderMessage(i18n, notificationType);
@@ -265,10 +274,14 @@ async function initNotificationBar(message: NotificationBarWindowMessage) {
     new Promise<NotificationCipherData[]>((resolve) =>
       sendPlatformMessage({ command: "bgGetDecryptedCiphers" }, resolve),
     ),
+    new Promise<boolean>((resolve) =>
+      sendPlatformMessage({ command: "bgGetSaveBaseUrlOnly" }, resolve),
+    ),
     new Promise<CollectionView[]>((resolve) =>
       sendPlatformMessage({ command: "bgGetCollectionData", orgId }, resolve),
     ),
-  ]).then(([organizations, folders, ciphers, collections]) => {
+  ]).then(([organizations, folders, ciphers, trimUri, collections]) => {
+    saveBaseUrlOnly = trimUri ?? false;
     notificationBarIframeInitData = {
       ...notificationBarIframeInitData,
       organizations,
@@ -277,7 +290,10 @@ async function initNotificationBar(message: NotificationBarWindowMessage) {
       collections,
     };
 
-    // @TODO use context to avoid prop drilling
+    renderNotification();
+  });
+
+  function renderNotification() {
     return render(
       NotificationContainer({
         ...notificationBarIframeInitData,
@@ -290,10 +306,22 @@ async function initNotificationBar(message: NotificationBarWindowMessage) {
         handleSaveAction,
         handleEditOrUpdateAction,
         i18n,
+        saveBaseUrlOption:
+          notificationType === NotificationTypes.Add
+            ? {
+                uri: notificationBarIframeInitData.ciphers?.[0]?.login?.uri,
+                enabled: saveBaseUrlOnly ?? false,
+                i18n,
+                onChange: (enabled: boolean) => {
+                  saveBaseUrlOnly = enabled;
+                  renderNotification();
+                },
+              }
+            : undefined,
       }),
       document.body,
     );
-  });
+  }
 
   function handleEditOrUpdateAction(e: Event) {
     e.preventDefault();
@@ -345,6 +373,7 @@ function sendSaveCipherMessage(cipherId: CipherView["id"] | null, edit: boolean,
     cipherId,
     folder,
     edit,
+    saveBaseUrlOnly,
   });
 }
 
@@ -360,6 +389,7 @@ function openAddEditVaultItemPopout(
   sendPlatformMessage({
     command: "bgOpenAddEditVaultItemPopout",
     ...options,
+    saveBaseUrlOnly,
   });
 }
 

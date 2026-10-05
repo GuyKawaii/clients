@@ -1,6 +1,6 @@
 import { ChangeDetectorRef } from "@angular/core";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { ReactiveFormsModule } from "@angular/forms";
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from "@angular/forms";
 import { mock } from "jest-mock-extended";
 import { Observable, of } from "rxjs";
 
@@ -70,6 +70,35 @@ describe("CipherFormComponent", () => {
 
   it("should create the component", () => {
     expect(component).toBeTruthy();
+  });
+
+  it("normalizes all website URLs before saving, preserving matching, app URLs, and other fields", () => {
+    const firstUri = new FormControl({
+      uri: "https://example.com/login?token=secret",
+      matchDetection: 1,
+    });
+    const secondUri = new FormControl({
+      uri: "http://192.168.1.100:8080/path?token=secret#session",
+      matchDetection: 0,
+    });
+    const appUri = new FormControl({ uri: "androidapp://com.example/login", matchDetection: null });
+    const emptyUri = new FormControl({ uri: null, matchDetection: null });
+    const group = new FormGroup({
+      uris: new FormArray([firstUri, secondUri, appUri, emptyUri]),
+      autofillOnPageLoad: new FormControl(false),
+    });
+    component.registerChildForm("autoFillOptions", group);
+
+    component.trimLoginUrisToOrigins();
+
+    expect(firstUri.value).toEqual({ uri: "https://example.com", matchDetection: 1 });
+    expect(firstUri.dirty).toBe(true);
+    expect(secondUri.value).toEqual({ uri: "http://192.168.1.100:8080", matchDetection: 0 });
+    expect(secondUri.dirty).toBe(true);
+    expect(appUri.value.uri).toBe("androidapp://com.example/login");
+    expect(appUri.pristine).toBe(true);
+    expect(emptyUri.value.uri).toBeNull();
+    expect(group.controls.autofillOnPageLoad.value).toBe(false);
   });
 
   describe("submit", () => {

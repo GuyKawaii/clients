@@ -9,6 +9,7 @@ import { AccountService } from "@bitwarden/common/auth/abstractions/account.serv
 import { AuthenticationStatus } from "@bitwarden/common/auth/enums/authentication-status";
 import { AuthService } from "@bitwarden/common/auth/services/auth.service";
 import { ExtensionCommand } from "@bitwarden/common/autofill/constants";
+import { AutofillSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/autofill-settings.service";
 import { DomainSettingsService } from "@bitwarden/common/autofill/services/domain-settings.service";
 import { UserNotificationSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/user-notification-settings.service";
 import { ProductTierType } from "@bitwarden/common/billing/enums";
@@ -93,6 +94,8 @@ describe("NotificationBackground", () => {
   userNotificationSettingsService.enableChangedPasswordPrompt$ = enableChangedPasswordPromptMock$;
   userNotificationSettingsService.enableAddedLoginPrompt$ = enableAddedLoginPromptMock$;
 
+  const autofillSettingsService = mock<AutofillSettingsServiceAbstraction>();
+  autofillSettingsService.saveBaseUrlOnly$ = of(false);
   const domainSettingsService = mock<DomainSettingsService>();
   const environmentService = mock<EnvironmentService>();
   const logService = mock<LogService>();
@@ -118,6 +121,7 @@ describe("NotificationBackground", () => {
   });
 
   beforeEach(() => {
+    autofillSettingsService.saveBaseUrlOnly$ = of(false);
     intraprocessMessageSender = new IntraprocessMessageSender();
     externalMessages = new Subject<Message<Record<string, unknown>>>();
     activeAccountStatusMock$ = new BehaviorSubject(
@@ -148,11 +152,112 @@ describe("NotificationBackground", () => {
       intraprocessMessageSender,
       // Wired as `MainBackground` wires it, so ingest tagging is exercised rather than faked.
       new MessageListener(intraprocessMessageSender.messages$({ external$: externalMessages })),
+      autofillSettingsService,
     );
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe("saving a base URL", () => {
+    const originalUri = "https://tenant.example.com:8080/login?token=secret#session";
+    const tab = createChromeTabMock({ id: 1, url: originalUri });
+
+    function queueLogin() {
+      const message: AddLoginQueueMessage = {
+        type: NotificationType.AddLogin,
+        tab,
+        domain: "example.com",
+        data: { username: "user", password: "password", uri: originalUri },
+        launchTimestamp: Date.now(),
+        expires: new Date(Date.now() + 10000),
+        wasVaultLocked: false,
+      };
+      notificationBackground["notificationQueue"] = [message];
+      return message;
+    }
+
+    beforeEach(() => {
+      activeAccountStatusMock$.next(AuthenticationStatus.Unlocked);
+      autofillSettingsService.saveBaseUrlOnly$ = of(false);
+      jest.spyOn(BrowserApi, "tabSendMessage").mockResolvedValue(undefined);
+      jest.spyOn(BrowserApi, "tabSendMessageData").mockResolvedValue(undefined);
+      cipherService.createWithServer.mockImplementation(async (cipher) => cipher);
+    });
+
+    it.each([
+      [true, true],
+      [true, false],
+      [false, true],
+      [false, false],
+    ])("commits the preview with stored default %s and checkbox %s", async (stored, enabled) => {
+      autofillSettingsService.saveBaseUrlOnly$ = of(stored);
+      const queueMessage = queueLogin();
+      await notificationBackground["saveOrUpdateCredentials"](
+        tab,
+        null,
+        false,
+        undefined,
+        false,
+        enabled,
+      );
+      const savedCipher = cipherService.createWithServer.mock.calls[0][0];
+      expect(savedCipher.login.uris[0].uri).toBe(
+        enabled ? "https://tenant.example.com:8080" : originalUri,
+      );
+      expect(savedCipher.login.username).toBe("user");
+      expect(savedCipher.login.password).toBe("password");
+      expect(queueMessage.data.uri).toBe(originalUri);
+    });
+
+    it("uses the persisted default when no checkbox override is provided", async () => {
+      queueLogin();
+      autofillSettingsService.saveBaseUrlOnly$ = of(true);
+      await notificationBackground["saveOrUpdateCredentials"](tab, null);
+      expect(cipherService.createWithServer.mock.calls[0][0].login.uris[0].uri).toBe(
+        "https://tenant.example.com:8080",
+      );
+    });
+
+    it("hands the original URL and chosen state to the edit form", async () => {
+      queueLogin();
+      jest
+        .spyOn(notificationBackground as any, "openAddEditVaultItemPopout")
+        .mockResolvedValue(undefined);
+      await notificationBackground["saveOrUpdateCredentials"](
+        tab,
+        null,
+        true,
+        undefined,
+        false,
+        true,
+      );
+      const info = cipherService.setAddEditCipherInfo.mock.calls[0][0];
+      expect(info.originalLoginUri).toBe(originalUri);
+      expect(info.saveBaseUrlOnly).toBe(true);
+      expect(info.cipher.login.uris[0].uri).toBe("https://tenant.example.com:8080");
+    });
+
+    it("passes the trimmed URL and context to an organization popout", async () => {
+      queueLogin();
+      jest
+        .spyOn(notificationBackground as any, "openAddEditVaultItemPopout")
+        .mockResolvedValue(undefined);
+      await notificationBackground["openAddEditVaultItem"](
+        {
+          command: "bgOpenAddEditVaultItemPopout",
+          organizationId: "org-id",
+          saveBaseUrlOnly: true,
+        },
+        tab,
+      );
+      const info = cipherService.setAddEditCipherInfo.mock.calls[0][0];
+      expect(info.originalLoginUri).toBe(originalUri);
+      expect(info.saveBaseUrlOnly).toBe(true);
+      expect(info.cipher.organizationId).toBe("org-id");
+      expect(info.cipher.login.uris[0].uri).toBe("https://tenant.example.com:8080");
+    });
   });
 
   describe("convertAddLoginQueueMessageToCipherView", () => {
@@ -3142,8 +3247,15 @@ describe("NotificationBackground", () => {
           expect(convertAddLoginQueueMessageToCipherViewSpy).toHaveBeenCalledWith(
             queueMessage,
             message.folder,
+            false,
           );
-          expect(editItemSpy).toHaveBeenCalledWith(cipherView, "testId", sender.tab);
+          expect(editItemSpy).toHaveBeenCalledWith(
+            cipherView,
+            "testId",
+            sender.tab,
+            queueMessage.data.uri,
+            false,
+          );
           expect(tabSendMessageSpy).toHaveBeenCalledWith(sender.tab, {
             command: "closeNotificationBar",
           });
@@ -3188,6 +3300,7 @@ describe("NotificationBackground", () => {
           expect(convertAddLoginQueueMessageToCipherViewSpy).toHaveBeenCalledWith(
             queueMessage,
             undefined,
+            false,
           );
           expect(createWithServerSpy).toHaveBeenCalled();
           expect(tabSendMessageDataSpy).toHaveBeenCalledWith(

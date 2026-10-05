@@ -22,6 +22,8 @@ export type OptionalInitialValues = {
   organizationId?: OrganizationId;
   collectionIds?: CollectionId[];
   loginUri?: string;
+  /** Original captured URL, retained so base-URL trimming can be undone before saving. */
+  originalLoginUri?: string;
   username?: string;
   password?: string;
   name?: string;
@@ -88,6 +90,12 @@ type BaseCipherFormConfig = {
    * Useful when creating a new cipher in a filtered view or modifying a cipher with values from another source (e.g. the notification bar in Browser)
    */
   initialValues?: OptionalInitialValues;
+
+  /** Browser-only URL capture option for new logins; omitted by other clients and edit flows. */
+  saveBaseUrlOnly?: {
+    enabled: boolean;
+    originalUri?: string;
+  };
 
   /**
    * The list of collections that the user has visibility to. This list should include read-only collections as they

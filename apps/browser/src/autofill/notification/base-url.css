@@ -1,0 +1,3 @@
+@import "../../../../../libs/components/src/tw-theme.css";
+
+@config "./tailwind.config.js";

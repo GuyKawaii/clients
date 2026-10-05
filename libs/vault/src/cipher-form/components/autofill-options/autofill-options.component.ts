@@ -5,12 +5,13 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from "@angular/cdk/drag-
 import { AsyncPipe } from "@angular/common";
 import { Component, OnInit, QueryList, ViewChildren } from "@angular/core";
 import { takeUntilDestroyed, toSignal } from "@angular/core/rxjs-interop";
-import { FormBuilder, ReactiveFormsModule } from "@angular/forms";
-import { filter, map, of, Subject, switchMap, take } from "rxjs";
+import { FormBuilder, FormControl, ReactiveFormsModule } from "@angular/forms";
+import { concatMap, filter, map, of, Subject, switchMap, take, tap } from "rxjs";
 
 import { JslibModule } from "@bitwarden/angular/jslib.module";
 import { AutofillSettingsServiceAbstraction } from "@bitwarden/common/autofill/services/autofill-settings.service";
 import { DomainSettingsService } from "@bitwarden/common/autofill/services/domain-settings.service";
+import { trimToOriginUrl } from "@bitwarden/common/autofill/utils/trim-to-origin-url";
 import { AutotypeFeatureFlagState } from "@bitwarden/common/desktop-native/enums/autotype-feature-flag-state.enum";
 import { autotypeFeatureFlagState$ } from "@bitwarden/common/desktop-native/services/autotype-feature-flags";
 import { ClientType, DeviceType } from "@bitwarden/common/enums";
@@ -22,6 +23,7 @@ import { LoginUriView } from "@bitwarden/common/vault/models/view/login-uri.view
 import { LoginView } from "@bitwarden/common/vault/models/view/login.view";
 import {
   CardComponent,
+  CheckboxModule,
   FormFieldModule,
   IconButtonModule,
   LinkModule,
@@ -29,6 +31,7 @@ import {
   SectionHeaderComponent,
   SelectModule,
   TypographyModule,
+  TooltipDirective,
 } from "@bitwarden/components";
 
 import { DESKTOP_APP_URI_PREFIX } from "../../../models/desktop-app-uri.constants";
@@ -60,6 +63,8 @@ interface UriField {
     LinkModule,
     MenuModule,
     AsyncPipe,
+    CheckboxModule,
+    TooltipDirective,
   ],
 })
 export class AutofillOptionsComponent implements OnInit {
@@ -84,6 +89,17 @@ export class AutofillOptionsComponent implements OnInit {
     return this.cipherFormContainer.config.mode === "partial-edit";
   }
 
+  protected get saveBaseUrlOnlyOption() {
+    return this.cipherFormContainer.config.mode === "add"
+      ? this.cipherFormContainer.config.saveBaseUrlOnly
+      : undefined;
+  }
+
+  protected readonly saveBaseUrlOnlyControl = new FormControl(
+    this.saveBaseUrlOnlyOption?.enabled ?? false,
+    { nonNullable: true },
+  );
+
   protected defaultMatchDetection$ =
     this.domainSettingsService.resolvedDefaultUriMatchStrategy$.pipe(
       // The default match detection should only be shown when used on the browser
@@ -102,6 +118,9 @@ export class AutofillOptionsComponent implements OnInit {
    * Emits when a new URI input is added to the form and should be focused.
    */
   private focusOnNewInput$ = new Subject<void>();
+
+  // Key by control identity so original URLs follow their fields when reordered or removed.
+  private readonly originalUris = new WeakMap<FormControl<UriField>, string>();
 
   private readonly isWindowsDesktop =
     this.platformUtilsService.getDevice() === DeviceType.WindowsDesktop;
@@ -130,6 +149,9 @@ export class AutofillOptionsComponent implements OnInit {
     this.cipherFormContainer.registerChildForm("autoFillOptions", this.autofillOptionsForm);
 
     this.autofillOptionsForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (this.saveBaseUrlOnlyOption?.enabled) {
+        this.uriControls.forEach((control) => this.rememberUri(control));
+      }
       this.cipherFormContainer.patchCipher((cipher) => {
         cipher.login.uris = value.uris?.map((uri: UriField) =>
           Object.assign(new LoginUriView(), {
@@ -143,6 +165,15 @@ export class AutofillOptionsComponent implements OnInit {
     });
 
     this.updateDefaultAutofillLabel();
+
+    this.saveBaseUrlOnlyControl.valueChanges
+      .pipe(
+        filter(() => this.saveBaseUrlOnlyOption != null),
+        tap((enabled) => this.updateSaveBaseUrlOnly(enabled)),
+        concatMap((enabled) => this.autofillSettingsService.setSaveBaseUrlOnly(enabled)),
+        takeUntilDestroyed(),
+      )
+      .subscribe();
 
     this.focusOnNewInput$
       .pipe(
@@ -160,8 +191,10 @@ export class AutofillOptionsComponent implements OnInit {
       // Disable adding new URIs when the cipher form is disabled
       if (status === "disabled") {
         this.autofillOptionsForm.disable({ emitEvent: false });
+        this.saveBaseUrlOnlyControl.disable({ emitEvent: false });
       } else if (!this.isPartialEdit) {
         this.autofillOptionsForm.enable({ emitEvent: false });
+        this.saveBaseUrlOnlyControl.enable({ emitEvent: false });
       }
     });
   }
@@ -177,6 +210,51 @@ export class AutofillOptionsComponent implements OnInit {
     if (this.isPartialEdit) {
       this.autofillOptionsForm.disable();
     }
+  }
+
+  private rememberUri(control: FormControl<UriField>) {
+    const uri = control.value?.uri;
+    const original = this.originalUris.get(control);
+    if (uri != null && (original == null || uri !== trimToOriginUrl(original))) {
+      this.originalUris.set(control, uri);
+    }
+  }
+
+  /** Normalize after leaving a field so users can finish typing or pasting the full URL. */
+  protected trimUri(control: FormControl<UriField>, markDirty = true) {
+    if (!this.saveBaseUrlOnlyOption?.enabled || control.value?.uri == null) {
+      return;
+    }
+    this.rememberUri(control);
+    const uri = trimToOriginUrl(control.value.uri);
+    if (uri !== control.value.uri) {
+      control.setValue({ ...control.value, uri });
+      if (markDirty) {
+        control.markAsDirty();
+      }
+    }
+  }
+
+  private updateSaveBaseUrlOnly(enabled: boolean) {
+    const option = this.saveBaseUrlOnlyOption;
+    if (option == null) {
+      return;
+    }
+
+    option.enabled = enabled;
+    this.uriControls.forEach((control) => {
+      if (enabled) {
+        this.trimUri(control);
+      } else {
+        const original = this.originalUris.get(control);
+        if (original != null && control.value?.uri === trimToOriginUrl(original)) {
+          if (original !== control.value.uri) {
+            control.setValue({ ...control.value, uri: original });
+            control.markAsDirty();
+          }
+        }
+      }
+    });
   }
 
   private initFromExistingCipher(existingLogin: LoginView) {
@@ -257,7 +335,17 @@ export class AutofillOptionsComponent implements OnInit {
     focusNewInput = false,
     emitEvent = true,
   ) {
-    this.autofillOptionsForm.controls.uris.push(this.formBuilder.control(uriFieldValue), {
+    const control = this.formBuilder.control(uriFieldValue);
+    const capturedUri = this.saveBaseUrlOnlyOption?.originalUri;
+    if (
+      this.uriControls.length === 0 &&
+      capturedUri != null &&
+      uriFieldValue.uri === trimToOriginUrl(capturedUri)
+    ) {
+      this.originalUris.set(control, capturedUri);
+    }
+    this.trimUri(control, false);
+    this.autofillOptionsForm.controls.uris.push(control, {
       emitEvent,
     });
 
