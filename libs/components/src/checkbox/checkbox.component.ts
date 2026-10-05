@@ -57,7 +57,13 @@ export class CheckboxComponent implements BitFormControlAbstraction {
     );
   });
 
-  protected readonly inputClasses = checkboxInputClasses;
+  protected readonly inputClasses = [
+    ...checkboxInputClasses,
+    // Negate the sizing offset inside Angular form controls.
+    "!-tw-mt-px",
+    "!-tw-mb-px",
+    "!-tw-ms-px",
+  ];
 
   private readonly ngControl = inject(NgControl, { optional: true, self: true });
 

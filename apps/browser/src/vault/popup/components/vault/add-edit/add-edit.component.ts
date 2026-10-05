@@ -208,8 +208,8 @@ export class AddEditComponent implements OnInit, OnDestroy {
   routeAfterDeletion: ROUTES_AFTER_EDIT_DELETION = "/tabs/vault";
   protected saveAndFillEnabled = false;
   private fillOnSuccessfulSave = false;
-  protected originalLoginUri?: string;
-  protected saveBaseUrlOnly = false;
+  private originalLoginUri?: string;
+  private saveBaseUrlOnly = false;
   private readonly autofillSettingsService = inject(AutofillSettingsServiceAbstraction);
 
   private async initializeNotificationUrl(info: AddEditCipherInfo | null, originalUri?: string) {
@@ -339,10 +339,8 @@ export class AddEditComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * Called before the form is submitted, allowing us to handle Fido2 user verification.
-   */
-  protected checkFido2UserVerification: () => Promise<boolean> = async () => {
+  /** Apply the URL capture choice before continuing with credential verification. */
+  protected prepareForSubmit: () => Promise<boolean> = async () => {
     const form = this.cipherFormComponent();
     if (
       (this.config?.saveBaseUrlOnly?.enabled ?? this.saveBaseUrlOnly) &&
@@ -352,6 +350,13 @@ export class AddEditComponent implements OnInit, OnDestroy {
       form?.trimLoginUrisToOrigins();
     }
 
+    return this.checkFido2UserVerification();
+  };
+
+  /**
+   * Called before the form is submitted, allowing us to handle Fido2 user verification.
+   */
+  protected checkFido2UserVerification: () => Promise<boolean> = async () => {
     if (!this.inFido2PopoutWindow) {
       // Not in a Fido2 popout window, no need to handle user verification.
       return true;
