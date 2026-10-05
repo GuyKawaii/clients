@@ -31,11 +31,11 @@ export function SaveBaseUrlOption({ uri, enabled, i18n, onChange }: SaveBaseUrlO
             id="save-base-url-only"
             type="checkbox"
             class=${checkboxInputClasses.join(" ")}
-            style=${`--check-mask: ${checkboxCheckMask}`}
+            style=${`--check-mask: ${checkboxCheckMask}; margin: 0 !important;`}
             .checked=${enabled}
             @change=${(event: Event) => onChange((event.target as HTMLInputElement).checked)}
           />
-          ${i18n.saveBaseUrlOnly}
+          <span>${i18n.saveBaseUrlOnly}</span>
         </label>
         ${Popover({
           id: "save-base-url-only-help",
