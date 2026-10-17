@@ -170,8 +170,9 @@ export class AutofillOptionsComponent implements OnInit {
       .pipe(
         filter(() => this.saveBaseUrlOnlyOption != null),
         tap((enabled) => this.updateSaveBaseUrlOnly(enabled)),
-        concatMap((enabled) => this.autofillSettingsService.setSaveBaseUrlOnly(enabled)),
         takeUntilDestroyed(),
+        // Complete the input stream on teardown so already queued writes can finish.
+        concatMap((enabled) => this.autofillSettingsService.setSaveBaseUrlOnly(enabled)),
       )
       .subscribe();
 
@@ -255,6 +256,8 @@ export class AutofillOptionsComponent implements OnInit {
         }
       }
     });
+    // Cache the choice even when the website values did not change.
+    this.cipherFormContainer.patchCipher((cipher) => cipher);
   }
 
   private initFromExistingCipher(existingLogin: LoginView) {

@@ -5,6 +5,7 @@ import { ViewCacheService } from "@bitwarden/angular/platform/view-cache";
 import { CipherView } from "@bitwarden/common/vault/models/view/cipher.view";
 
 const CIPHER_FORM_CACHE_KEY = "cipher-form-cache";
+const SAVE_BASE_URL_ONLY_CACHE_KEY = "cipher-form-save-base-url-only";
 
 @Injectable()
 export class CipherFormCacheService {
@@ -24,25 +25,34 @@ export class CipherFormCacheService {
    */
   initialCacheValue: CipherView | null;
 
+  private initialSaveBaseUrlOnly: boolean | null;
+
   private cipherCache = this.viewCacheService.signal<CipherView | null>({
     key: CIPHER_FORM_CACHE_KEY,
     initialValue: null,
     deserializer: CipherView.fromJSON,
   });
 
+  private saveBaseUrlOnlyCache = this.viewCacheService.signal<boolean | null>({
+    key: SAVE_BASE_URL_ONLY_CACHE_KEY,
+    initialValue: null,
+  });
+
   constructor() {
     this.initializedWithValue = !!this.cipherCache();
     this.initialCacheValue = this.cipherCache();
+    this.initialSaveBaseUrlOnly = this.saveBaseUrlOnlyCache();
   }
 
   /**
    * Update the cache with the new CipherView.
    */
-  cacheCipherView(cipherView: CipherView): void {
+  cacheCipherView(cipherView: CipherView, saveBaseUrlOnly: boolean | null = null): void {
     // Create a new reference to force the signal to update
     // By default, signals use `Object.is` to determine equality
     // Docs: https://angular.dev/guide/signals#signal-equality-functions
     this.cipherCache.set(CipherView.fromJSON(cipherView as Jsonify<CipherView>));
+    this.saveBaseUrlOnlyCache.set(saveBaseUrlOnly);
   }
 
   /**
@@ -52,11 +62,18 @@ export class CipherFormCacheService {
     return this.initialCacheValue;
   }
 
+  /** The capture choice for the initially cached draft, independent of the global default. */
+  getCachedSaveBaseUrlOnly(): boolean | null {
+    return this.initialSaveBaseUrlOnly;
+  }
+
   /**
    * Clear the cached CipherView.
    */
   clearCache(): void {
     this.initialCacheValue = null;
+    this.initialSaveBaseUrlOnly = null;
     this.cipherCache.set(null);
+    this.saveBaseUrlOnlyCache.set(null);
   }
 }

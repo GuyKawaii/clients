@@ -64,10 +64,10 @@ export const ADD_EDIT_CIPHER_INFO_KEY = new UserKeyDefinition<AddEditCipherInfo>
         cipher,
         collectionIds: addEditCipherInfo.collectionIds,
         ...(addEditCipherInfo.originalLoginUri != null
-          ? {
-              originalLoginUri: addEditCipherInfo.originalLoginUri,
-              saveBaseUrlOnly: addEditCipherInfo.saveBaseUrlOnly,
-            }
+          ? { originalLoginUri: addEditCipherInfo.originalLoginUri }
+          : {}),
+        ...(addEditCipherInfo.saveBaseUrlOnly != null
+          ? { saveBaseUrlOnly: addEditCipherInfo.saveBaseUrlOnly }
           : {}),
       };
     },

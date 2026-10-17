@@ -101,4 +101,66 @@ describe("Popover", () => {
     expect(arrow.style.left).toBe("250px");
     expect(arrow.classList.contains(testCase.border)).toBe(true);
   });
+
+  it.each([
+    { top: 150, expectedTop: "166px", height: 226, border: "tw-border-t", arrowTop: "2px" },
+    { top: 250, expectedTop: "8px", height: 242, border: "tw-border-b", arrowTop: "228px" },
+  ])("scrolls long help on the side with more space ($top)", (testCase) => {
+    jest.replaceProperty(window, "innerHeight", 400);
+    render(popover("help"), document.body);
+    const panel = document.getElementById("help")!;
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-controls="help"]')!;
+    const scrollContent = panel.querySelector<HTMLElement>("[data-popover-scroll]")!;
+    const close = panel.querySelector<HTMLButtonElement>('button[aria-label="Close help"]')!;
+    jest.spyOn(panel, "getBoundingClientRect").mockReturnValue(rectangle(0, 0, 360, 300));
+    jest
+      .spyOn(trigger, "getBoundingClientRect")
+      .mockReturnValue(rectangle(20, testCase.top, 16, 16));
+
+    trigger.click();
+
+    expect(panel.style.top).toBe(testCase.expectedTop);
+    expect(scrollContent.style.maxHeight).toBe(`${testCase.height - 10}px`);
+    expect(scrollContent.tabIndex).toBe(0);
+    expect(scrollContent.classList.contains("tw-overflow-y-auto")).toBe(true);
+    // The close button stays outside the scrolling region.
+    expect(scrollContent.contains(close)).toBe(false);
+    const arrow = panel.querySelector<HTMLElement>(".bit-popover-arrow")!;
+    expect(arrow.style.top).toBe(testCase.arrowTop);
+    expect(arrow.classList.contains(testCase.border)).toBe(true);
+
+    scrollContent.focus();
+    scrollContent.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    expect(panel.hidden).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+
+    trigger.click();
+    close.focus();
+    close.click();
+    expect(panel.hidden).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("removes scrolling constraints when help fits after reopening", () => {
+    jest.replaceProperty(window, "innerHeight", 400);
+    render(popover("help"), document.body);
+    const panel = document.getElementById("help")!;
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-controls="help"]')!;
+    const scrollContent = panel.querySelector<HTMLElement>("[data-popover-scroll]")!;
+    const measure = jest.spyOn(panel, "getBoundingClientRect");
+    measure.mockReturnValue(rectangle(0, 0, 360, 300));
+    jest.spyOn(trigger, "getBoundingClientRect").mockReturnValue(rectangle(20, 150, 16, 16));
+    trigger.click();
+    expect(scrollContent.style.maxHeight).toBe("216px");
+    panel.querySelector<HTMLButtonElement>('button[aria-label="Close help"]')!.click();
+
+    measure.mockReturnValue(rectangle(0, 0, 360, 120));
+    trigger.click();
+
+    expect(scrollContent.style.maxHeight).toBe("");
+    expect(scrollContent.tabIndex).toBe(-1);
+    expect(panel.style.top).toBe("30px");
+  });
 });

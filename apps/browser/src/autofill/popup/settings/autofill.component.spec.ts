@@ -113,4 +113,21 @@ describe("Autofill settings base URL preference", () => {
     control.setValue(false);
     expect(settings.setSaveBaseUrlOnly).toHaveBeenLastCalledWith(false);
   });
+
+  it("finishes queued preference writes after settings close", async () => {
+    let finishWrite!: () => void;
+    settings.setSaveBaseUrlOnly.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishWrite = resolve)),
+    );
+    await fixture.componentInstance.ngOnInit();
+    const control = fixture.componentInstance["additionalOptionsForm"].controls.saveBaseUrlOnly;
+    control.setValue(true);
+    control.setValue(false);
+
+    fixture.destroy();
+    finishWrite();
+    await Promise.resolve();
+
+    expect(settings.setSaveBaseUrlOnly).toHaveBeenLastCalledWith(false);
+  });
 });

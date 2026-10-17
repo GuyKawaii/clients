@@ -22,8 +22,6 @@ export type OptionalInitialValues = {
   organizationId?: OrganizationId;
   collectionIds?: CollectionId[];
   loginUri?: string;
-  /** Original captured URL, retained so base-URL trimming can be undone before saving. */
-  originalLoginUri?: string;
   username?: string;
   password?: string;
   name?: string;

@@ -260,6 +260,33 @@ describe("AutofillOptionsComponent", () => {
       expect(autofillSettingsService.setSaveBaseUrlOnly).toHaveBeenLastCalledWith(false);
     });
 
+    it("finishes queued preference writes after the form closes", async () => {
+      let finishFirstWrite: () => void;
+      autofillSettingsService.setSaveBaseUrlOnly.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (finishFirstWrite = resolve)),
+      );
+      initialize();
+      component["saveBaseUrlOnlyControl"].setValue(true);
+      component["saveBaseUrlOnlyControl"].setValue(false);
+      fixture.destroy();
+
+      finishFirstWrite();
+      await Promise.resolve();
+
+      expect(autofillSettingsService.setSaveBaseUrlOnly).toHaveBeenLastCalledWith(false);
+    });
+
+    it.each(["", origin])("updates the draft choice when the URI %s stays unchanged", (uri) => {
+      initialize(false, uri, uri);
+      cipherFormContainer.patchCipher.mockClear();
+
+      component.saveBaseUrlOnlyControl.setValue(true);
+
+      expect(component.autofillOptionsForm.controls.uris.at(0).value.uri).toBe(uri);
+      expect(cipherFormContainer.config.saveBaseUrlOnly.enabled).toBe(true);
+      expect(cipherFormContainer.patchCipher).toHaveBeenCalled();
+    });
+
     it("preserves manually edited URLs when unchecking and trims their latest value when rechecking", async () => {
       initialize(true);
       const first = component.autofillOptionsForm.controls.uris.at(0);

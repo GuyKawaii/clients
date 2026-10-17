@@ -393,8 +393,9 @@ export class AutofillComponent implements OnInit {
 
     this.additionalOptionsForm.controls.saveBaseUrlOnly.valueChanges
       .pipe(
-        concatMap((value) => this.autofillSettingsService.setSaveBaseUrlOnly(value)),
         takeUntilDestroyed(this.destroyRef),
+        // Complete the input stream on teardown so already queued writes can finish.
+        concatMap((value) => this.autofillSettingsService.setSaveBaseUrlOnly(value)),
       )
       .subscribe();
 

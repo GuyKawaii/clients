@@ -183,7 +183,15 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
   }
 
   /** Normalize all website URLs before saving, including an input that is still focused. */
-  trimLoginUrisToOrigins(): void {
+  private trimLoginUrisToOrigins(): void {
+    if (
+      this.config.mode !== "add" ||
+      this.config.cipherType !== CipherType.Login ||
+      !this.config.saveBaseUrlOnly?.enabled
+    ) {
+      return;
+    }
+
     const controls = this.cipherForm.controls.autoFillOptions?.controls.uris.controls ?? [];
     for (const control of controls) {
       const current = control.value;
@@ -235,7 +243,11 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
   patchCipher(updateFn: (current: CipherView) => CipherView): void {
     this.updatedCipherView = updateFn(this.updatedCipherView);
     // Cache the updated cipher
-    this.cipherFormCacheService.cacheCipherView(this.updatedCipherView);
+    const saveBaseUrlOnly =
+      this.config.mode === "add" && this.config.cipherType === CipherType.Login
+        ? (this.config.saveBaseUrlOnly?.enabled ?? null)
+        : null;
+    this.cipherFormCacheService.cacheCipherView(this.updatedCipherView, saveBaseUrlOnly);
   }
 
   /**
@@ -353,6 +365,16 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
 
     if (isEditingExistingCipher || isCreatingNewCipher) {
       this.updatedCipherView = cachedCipher;
+      const saveBaseUrlOnly = this.cipherFormCacheService.getCachedSaveBaseUrlOnly();
+      if (
+        isCreatingNewCipher &&
+        this.config.mode === "add" &&
+        this.config.cipherType === CipherType.Login &&
+        this.config.saveBaseUrlOnly &&
+        saveBaseUrlOnly != null
+      ) {
+        this.config.saveBaseUrlOnly.enabled = saveBaseUrlOnly;
+      }
     }
   }
 
@@ -411,6 +433,8 @@ export class CipherFormComponent implements AfterViewInit, OnInit, OnChanges, Ci
       }
       return;
     }
+
+    this.trimLoginUrisToOrigins();
 
     if (this.beforeSubmit) {
       const shouldSubmit = await this.beforeSubmit();

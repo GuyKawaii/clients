@@ -20,7 +20,7 @@
       formId="cipherForm"
       [config]="config"
       (cipherSaved)="onCipherSaved($event)"
-      [beforeSubmit]="prepareForSubmit"
+      [beforeSubmit]="checkFido2UserVerification"
       [submitBtn]="submitBtn"
     >
       <app-open-attachments

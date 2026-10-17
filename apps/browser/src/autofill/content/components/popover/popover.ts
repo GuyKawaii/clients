@@ -49,8 +49,20 @@ export function Popover({
     panel.style.width = `${width}px`;
     panel.style.paddingTop = "0";
     panel.style.paddingBottom = "8px";
-    const height = panel.getBoundingClientRect().height;
-    const above = anchor.top - height >= 8;
+    const scrollContent = panel.querySelector<HTMLElement>("[data-popover-scroll]")!;
+    // Measure the full content again when reopening after a constrained layout.
+    scrollContent.style.maxHeight = "";
+    const naturalHeight = panel.getBoundingClientRect().height;
+    const spaceAbove = Math.max(0, anchor.top - 8);
+    const spaceBelow = Math.max(0, window.innerHeight - anchor.bottom - 8);
+    const above =
+      naturalHeight <= spaceAbove || (naturalHeight > spaceBelow && spaceAbove > spaceBelow);
+    const height = Math.min(naturalHeight, above ? spaceAbove : spaceBelow);
+    scrollContent.tabIndex = height < naturalHeight ? 0 : -1;
+    if (height < naturalHeight) {
+      // Leave room for the arrow gap and the surface's two one-pixel borders.
+      scrollContent.style.maxHeight = `${Math.max(0, height - 10)}px`;
+    }
     panel.style.paddingTop = above ? "0" : "8px";
     panel.style.paddingBottom = above ? "8px" : "0";
     const left = Math.max(
@@ -124,27 +136,33 @@ export function Popover({
       >
         <div class="${popoverStyles.surface} tw-box-border tw-border-solid">
           <div class=${popoverStyles.body}>
-            <div class=${popoverStyles.padding}>
-              <div class=${popoverStyles.closePosition}>
-                <button
-                  type="button"
-                  aria-label=${closeLabel}
-                  class="tw-flex tw-size-8 tw-cursor-pointer tw-items-center tw-justify-center tw-rounded-full tw-border-0 tw-bg-transparent tw-p-0 tw-text-fg-heading focus-visible:tw-outline focus-visible:tw-outline-2 focus-visible:tw-outline-primary-600"
-                  @click=${close}
+            <div class="${popoverStyles.closePosition} tw-z-30 tw-rounded-full tw-bg-bg-primary">
+              <button
+                type="button"
+                aria-label=${closeLabel}
+                class="tw-flex tw-size-8 tw-cursor-pointer tw-items-center tw-justify-center tw-rounded-full tw-border-0 tw-bg-transparent tw-p-0 tw-text-fg-heading focus-visible:tw-outline focus-visible:tw-outline-2 focus-visible:tw-outline-primary-600"
+                @click=${close}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
                 >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    aria-hidden="true"
-                  >
-                    <path d="m6 6 12 12M6 18 18 6" />
-                  </svg>
-                </button>
-              </div>
+                  <path d="m6 6 12 12M6 18 18 6" />
+                </svg>
+              </button>
+            </div>
+            <div
+              data-popover-scroll
+              class="${popoverStyles.padding} tw-box-border tw-overflow-y-auto"
+              tabindex="-1"
+              role="region"
+              aria-labelledby=${`${id}-title`}
+            >
               <div class=${popoverStyles.content}>
                 <div class=${popoverStyles.headingAndBody}>
                   <h2
